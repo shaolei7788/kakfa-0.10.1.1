@@ -104,7 +104,6 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
   private val jmxPrefix: String = "kafka.server"
   private val reporters: java.util.List[MetricsReporter] = config.metricReporterClasses
   reporters.add(new JmxReporter(jmxPrefix))
-
   // This exists because the Metrics package from clients has its own Time implementation.
   // SocketServer/Quotas (which uses client libraries) have to use the client Time objects without having to convert all of Kafka to use them
   // Eventually, we want to merge the Time objects in core and clients
