@@ -113,12 +113,15 @@ class GroupCoordinator(val brokerId: Int,
       // only try to create the group if the group is not unknown AND
       // the member id is UNKNOWN, if member is specified but group does not
       // exist we should reject the request
+
       groupManager.getGroup(groupId) match {
         case None =>
           if (memberId != JoinGroupRequest.UNKNOWN_MEMBER_ID) {
             responseCallback(joinError(memberId, Errors.UNKNOWN_MEMBER_ID.code))
           } else {
+            //todo
             val group = groupManager.addGroup(new GroupMetadata(groupId))
+            //todo 进行leader consumer选举
             doJoinGroup(group, memberId, clientId, clientHost, rebalanceTimeoutMs, sessionTimeoutMs, protocolType, protocols, responseCallback)
           }
 
@@ -137,6 +140,7 @@ class GroupCoordinator(val brokerId: Int,
                           protocolType: String,
                           protocols: List[(String, Array[Byte])],
                           responseCallback: JoinCallback) {
+    //todo 加锁了
     group synchronized {
       if (!group.is(Empty) && (group.protocolType != Some(protocolType) || !group.supportsProtocols(protocols.map(_._1).toSet))) {
         // if the new member does not support the group protocol, reject it
@@ -154,11 +158,14 @@ class GroupCoordinator(val brokerId: Int,
             // joining without the specified member id,
             responseCallback(joinError(memberId, Errors.UNKNOWN_MEMBER_ID.code))
 
+          //准备rebalance
           case PreparingRebalance =>
+            // memberId 为空
             if (memberId == JoinGroupRequest.UNKNOWN_MEMBER_ID) {
+              //todo 添加成员并进行rebalance
               addMemberAndRebalance(rebalanceTimeoutMs, sessionTimeoutMs, clientId, clientHost, protocolType, protocols, group, responseCallback)
             } else {
-              val member = group.get(memberId)
+              val member : MemberMetadata = group.get(memberId)
               updateMemberAndRebalance(group, member, protocols, responseCallback)
             }
 
@@ -621,6 +628,7 @@ class GroupCoordinator(val brokerId: Int,
     val member = new MemberMetadata(memberId, group.groupId, clientId, clientHost, rebalanceTimeoutMs,
       sessionTimeoutMs, protocolType, protocols)
     member.awaitingJoinCallback = callback
+    //加入group,并选从leader
     group.add(member.memberId, member)
     maybePrepareRebalance(group)
     member

@@ -733,6 +733,7 @@ class ZkUtils(val zkClient: ZkClient,
 
   def getPartitionsBeingReassigned(): Map[TopicAndPartition, ReassignedPartitionsContext] = {
     // read the partitions and their new replica list
+    // path = /admin/reassign_partitions
     val jsonPartitionMapOpt = readDataMaybeNull(ReassignPartitionsPath)._1
     jsonPartitionMapOpt match {
       case Some(jsonPartitionMap) =>
@@ -764,6 +765,7 @@ class ZkUtils(val zkClient: ZkClient,
 
   def getPartitionsUndergoingPreferredReplicaElection(): Set[TopicAndPartition] = {
     // read the partitions and their new replica list
+    // path = /admin/preferred_replica_election
     val jsonPartitionListOpt = readDataMaybeNull(PreferredReplicaLeaderElectionPath)._1
     jsonPartitionListOpt match {
       case Some(jsonPartitionList) => PreferredReplicaLeaderElectionCommand.parsePreferredReplicaElectionData(jsonPartitionList)

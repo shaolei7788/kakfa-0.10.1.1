@@ -234,7 +234,9 @@ class ReplicaFetcherThread(name: String,
     delayPartitions(partitions, brokerConfig.replicaFetchBackoffMs.toLong)
   }
 
+
   protected def fetch(fetchRequest: FetchRequest): Seq[(TopicPartition, PartitionData)] = {
+    //todo 阻塞发送消息
     val clientResponse = sendRequest(ApiKeys.FETCH, Some(fetchRequestVersion), fetchRequest.underlying)
     new FetchResponse(clientResponse.responseBody).responseData.asScala.toSeq.map { case (key, value) =>
       key -> new PartitionData(value)

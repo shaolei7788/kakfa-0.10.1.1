@@ -90,10 +90,12 @@ class LogSegment(val log: FileMessageSet,
     if (messages.sizeInBytes > 0) {
       trace("Inserting %d bytes at offset %d at position %d with largest timestamp %d at offset %d"
           .format(messages.sizeInBytes, firstOffset, log.sizeInBytes(), largestTimestamp, offsetOfLargestTimestamp))
+      //物理地址
       val physicalPosition = log.sizeInBytes()
       if (physicalPosition == 0)
         rollingBasedTimestamp = Some(largestTimestamp)
       // append the messages
+      //todo  log = FileMessageSet 添加消息
       log.append(messages)
       // Update the in memory max timestamp and corresponding offset.
       if (largestTimestamp > maxTimestampSoFar) {
@@ -101,11 +103,13 @@ class LogSegment(val log: FileMessageSet,
         offsetOfMaxTimestamp = offsetOfLargestTimestamp
       }
       // append an entry to the index (if needed)
+      // indexIntervalBytes = 4096 每次写了4096个字节的消息就更新一次索引
       if(bytesSinceLastIndexEntry > indexIntervalBytes) {
         index.append(firstOffset, physicalPosition)
         timeIndex.maybeAppend(maxTimestampSoFar, offsetOfMaxTimestamp)
         bytesSinceLastIndexEntry = 0
       }
+      //消息的大小添加到bytesSinceLastIndexEntry
       bytesSinceLastIndexEntry += messages.sizeInBytes
     }
   }
@@ -175,8 +179,9 @@ class LogSegment(val log: FileMessageSet,
         // when the leader of a partition changes, it's possible for the new leader's high watermark to be less than the
         // true high watermark in the previous leader for a short window. In this window, if a consumer fetches on an
         // offset between new leader's high watermark and the log end offset, we want to return an empty response.
-        if (offset < startOffset)
+        if (offset < startOffset) {
           return FetchDataInfo(offsetMetadata, MessageSet.Empty, firstMessageSetIncomplete = false)
+        }
         val mapping = translateOffset(offset, startPosition.position)
         val endPosition =
           if (mapping == null)
@@ -185,7 +190,7 @@ class LogSegment(val log: FileMessageSet,
             mapping._1.position
         min(min(maxPosition, endPosition) - startPosition.position, adjustedMaxSize).toInt
     }
-
+    //todo FetchDataInfo  样例类 log.read
     FetchDataInfo(offsetMetadata, log.read(startPosition.position, length),
       firstMessageSetIncomplete = adjustedMaxSize < messageSetSize)
   }

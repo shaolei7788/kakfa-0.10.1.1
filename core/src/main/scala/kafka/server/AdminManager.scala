@@ -62,13 +62,15 @@ class AdminManager(val config: KafkaConfig,
     val brokers = metadataCache.getAliveBrokers.map { b => kafka.admin.BrokerMetadata(b.id, b.rack) }
     val metadata = createInfo.map { case (topic, arguments) =>
       try {
+
         val configs = new Properties()
         arguments.configs.asScala.foreach { case (key, value) =>
           configs.setProperty(key, value)
         }
         LogConfig.validate(configs)
-
+        //todo 创建分区分配方案
         val assignments = {
+          //检测请求参数是否有arguments.replicasAssignments  副本分配方式
           if ((arguments.numPartitions != NO_NUM_PARTITIONS || arguments.replicationFactor != NO_REPLICATION_FACTOR)
             && !arguments.replicasAssignments.isEmpty)
             throw new InvalidRequestException("Both numPartitions or replicationFactor and replicasAssignments were set. " +
@@ -80,11 +82,14 @@ class AdminManager(val config: KafkaConfig,
               (partitionId.intValue, replicas.asScala.map(_.intValue))
             }
           } else {
+            //todo 没指定副本分配方式
             AdminUtils.assignReplicasToBrokers(brokers, arguments.numPartitions, arguments.replicationFactor)
           }
         }
         trace(s"Assignments for topic $topic are $assignments ")
+        //在zk上创建或修改主题分区分配信息
         AdminUtils.createOrUpdateTopicPartitionAssignmentPathInZK(zkUtils, topic, assignments, configs, update = false)
+        //todo 创建topic元数据
         CreateTopicMetadata(topic, assignments, Errors.NONE)
       } catch {
         case e: Throwable =>

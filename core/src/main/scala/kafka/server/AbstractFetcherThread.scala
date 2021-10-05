@@ -90,8 +90,9 @@ abstract class AbstractFetcherThread(name: String,
   override def doWork() {
 
     val fetchRequest = inLock(partitionMapLock) {
-      val fetchRequest = buildFetchRequest(partitionStates.partitionStates.asScala.map { state =>
-        state.topicPartition -> state.value
+      //构建拉取数据请求 变成元组 集合
+      val fetchRequest = buildFetchRequest(partitionStates.partitionStates.asScala.map {
+        state => state.topicPartition -> state.value
       })
       if (fetchRequest.isEmpty) {
         trace("There are no active partitions. Back off for %d ms before sending a fetch request".format(fetchBackOffMs))
@@ -99,8 +100,10 @@ abstract class AbstractFetcherThread(name: String,
       }
       fetchRequest
     }
-    if (!fetchRequest.isEmpty)
+    if (!fetchRequest.isEmpty) {
+      //todo
       processFetchRequest(fetchRequest)
+    }
   }
 
   private def processFetchRequest(fetchRequest: REQ) {
@@ -115,6 +118,7 @@ abstract class AbstractFetcherThread(name: String,
 
     try {
       trace("Issuing to broker %d of fetch request %s".format(sourceBroker.id, fetchRequest))
+      //todo 拉取数据 ReplicaFetcherThread#fetch
       responseData = fetch(fetchRequest)
     } catch {
       case t: Throwable =>

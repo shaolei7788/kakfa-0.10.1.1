@@ -309,6 +309,7 @@ class ByteBufferMessageSet(val buffer: ByteBuffer) extends MessageSet with Loggi
   /** Write the messages in this set to the given channel starting at the given offset byte.
     * Less than the complete amount may be written, but no more than maxSize can be. The number
     * of bytes written is returned */
+  //todo 将当前MessageSet中的消息写入到Channel
   def writeTo(channel: GatheringByteChannel, offset: Long, maxSize: Int): Int = {
     if (offset > Int.MaxValue)
       throw new IllegalArgumentException(s"offset should not be larger than Int.MaxValue: $offset")
@@ -328,6 +329,7 @@ class ByteBufferMessageSet(val buffer: ByteBuffer) extends MessageSet with Loggi
   }
 
   /** default iterator that iterates over decompressed messages */
+    //提供迭代器，顺序读取MessageSet中的消息
   override def iterator: Iterator[MessageAndOffset] = internalIterator()
 
   /** iterator over compressed messages without decompressing */

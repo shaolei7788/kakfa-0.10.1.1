@@ -43,10 +43,10 @@ import scala.collection.mutable.ArrayBuffer
  * @param isSlice Should the start and end parameters be used for slicing?
  */
 @nonthreadsafe
-class FileMessageSet private[kafka](@volatile var file: File,
-                                    private[log] val channel: FileChannel,
-                                    private[log] val start: Int,
-                                    private[log] val end: Int,
+class FileMessageSet private[kafka](@volatile var file: File,//指向磁盘上对应的日志文件
+                                    private[log] val channel: FileChannel,//用于读写对应的日志文件
+                                    private[log] val start: Int,//分片的起始位置
+                                    private[log] val end: Int,//分片的结束位置
                                     isSlice: Boolean) extends MessageSet with Logging {
 
   /* the size of the message set in bytes */
@@ -81,6 +81,9 @@ class FileMessageSet private[kafka](@volatile var file: File,
    */
   def this(file: File, fileAlreadyExists: Boolean, initFileSize: Int, preallocate: Boolean) =
       this(file,
+        //todo ============顺序写磁盘的原理就在这里 ============ 通过RandomAccessFile对应获得channel
+        //todo ============顺序写磁盘的原理就在这里 ============ 通过RandomAccessFile对应获得channel
+        //todo ============顺序写磁盘的原理就在这里 ============ 通过RandomAccessFile对应获得channel
         channel = FileMessageSet.openChannel(file, mutable = true, fileAlreadyExists, initFileSize, preallocate),
         start = 0,
         end = if (!fileAlreadyExists && preallocate) 0 else Int.MaxValue,
@@ -130,27 +133,36 @@ class FileMessageSet private[kafka](@volatile var file: File,
    * Search forward for the file position of the last offset that is greater than or equal to the target offset
    * and return its physical position and the size of the message (including log overhead) at the returned offset. If
    * no such offsets are found, return null.
-   *
    * @param targetOffset The offset to search for.
    * @param startingPosition The starting position in the file to begin searching from.
    */
+  //todo 从指定的 startingPosition 开始逐条遍历FileMessageSet中的消息，并将每个消费的offset与targetOffset进行比较
+  // 直到offset大于等于targetOffset,最后返回查找到的offset
   def searchForOffsetWithSize(targetOffset: Long, startingPosition: Int): (OffsetPosition, Int) = {
+    //起始位置
     var position = startingPosition
+    //用于读取LogOverhead 即 offset + size = 12
     val buffer = ByteBuffer.allocate(MessageSet.LogOverhead)
+    //当前FileMessageSet大小，单位字节
     val size = sizeInBytes()
     while(position + MessageSet.LogOverhead < size) {
+      //重置buffer的指针，准备从ByteBuffer读入数据
       buffer.rewind()
       channel.read(buffer, position)
       if(buffer.hasRemaining)
         throw new IllegalStateException("Failed to read complete buffer for targetOffset %d startPosition %d in %s"
           .format(targetOffset, startingPosition, file.getAbsolutePath))
+      //重置buffer的指针，准备读入数据
       buffer.rewind()
       val offset = buffer.getLong()
       val messageSize = buffer.getInt()
       if (messageSize < Message.MinMessageOverhead)
         throw new IllegalStateException("Invalid message size: " + messageSize)
-      if (offset >= targetOffset)
+      if (offset >= targetOffset) {
+        //返回符合的
         return (OffsetPosition(offset, position), messageSize + MessageSet.LogOverhead)
+      }
+      //移动position 准备读取下一个消息
       position += MessageSet.LogOverhead + messageSize
     }
     null
@@ -351,7 +363,9 @@ class FileMessageSet private[kafka](@volatile var file: File,
    * Append these messages to the message set
    */
   def append(messages: ByteBufferMessageSet) {
-    val written = messages.writeFullyTo(channel)
+    //todo 写文件
+    val written: Int = messages.writeFullyTo(channel)
+    //修改FileMessageSet的大小
     _size.getAndAdd(written)
   }
 
@@ -444,20 +458,26 @@ object FileMessageSet
    */
   def openChannel(file: File, mutable: Boolean, fileAlreadyExists: Boolean = false, initFileSize: Int = 0, preallocate: Boolean = false): FileChannel = {
     if (mutable) {
+      //创建
       if (fileAlreadyExists)
+        //todo 返回对象是FileChannelImpl
         new RandomAccessFile(file, "rw").getChannel()
       else {
+        //preallocate 决定是否开启预分配的功能
         if (preallocate) {
+          //todo 对应新创建的的且进行预分配空间的日志文件，其end会初始化为0
           val randomAccessFile = new RandomAccessFile(file, "rw")
           randomAccessFile.setLength(initFileSize)
           randomAccessFile.getChannel()
-        }
-        else
+        } else {
           new RandomAccessFile(file, "rw").getChannel()
+        }
       }
     }
-    else
+    else {
+      //创建只读的FileChannel
       new FileInputStream(file).getChannel()
+    }
   }
 }
 

@@ -196,7 +196,7 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
         /* start scheduler */
         kafkaScheduler.startup()
 
-        /* setup zookeeper */
+        //初始化zk
         zkUtils = initZk()
 
         /* Get or create cluster_id */
@@ -205,7 +205,7 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
 
         notifyClusterListeners(kafkaMetricsReporters ++ reporters.asScala)
 
-        /* start log manager */
+        //todo 创建日志管理器
         logManager = createLogManager(zkUtils.zkClient, brokerState)
         logManager.startup()
 
@@ -215,21 +215,22 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
 
         metadataCache = new MetadataCache(config.brokerId)
 
+        //todo socket server 服务端
         socketServer = new SocketServer(config, metrics, kafkaMetricsTime)
         socketServer.startup()
 
-        /* start replica manager */
+        //todo 副本管理器
         replicaManager = new ReplicaManager(config, metrics, time, kafkaMetricsTime, zkUtils, kafkaScheduler, logManager,
           isShuttingDown, quotaManagers.follower)
         replicaManager.startup()
 
-        /* start kafka controller */
+        //todo 创建kafka控制器  threadNamePrefix 默认是None
         kafkaController = new KafkaController(config, zkUtils, brokerState, kafkaMetricsTime, metrics, threadNamePrefix)
         kafkaController.startup()
 
         adminManager = new AdminManager(config, metrics, metadataCache, zkUtils)
 
-        /* start group coordinator */
+        //todo 创建协调者
         groupCoordinator = GroupCoordinator(config, zkUtils, replicaManager, kafkaMetricsTime)
         groupCoordinator.startup()
 
@@ -244,6 +245,7 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
         apis = new KafkaApis(socketServer.requestChannel, replicaManager, adminManager, groupCoordinator,
           kafkaController, zkUtils, config.brokerId, config, metadataCache, metrics, authorizer, quotaManagers, clusterId)
 
+        //todo
         requestHandlerPool = new KafkaRequestHandlerPool(config.brokerId, socketServer.requestChannel, apis, config.numIoThreads)
 
         Mx4jLoader.maybeLoad()
@@ -373,7 +375,7 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
           metrics,
           kafkaMetricsTime,
           "kafka-server-controlled-shutdown",
-          Map.empty.asJava,
+          null,
           false,
           channelBuilder
         )
@@ -648,7 +650,7 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
                    topicConfigs = configs,
                    defaultConfig = defaultLogConfig,
                    cleanerConfig = cleanerConfig,
-                   ioThreads = config.numRecoveryThreadsPerDataDir,
+                   ioThreads = config.numRecoveryThreadsPerDataDir,//1
                    flushCheckMs = config.logFlushSchedulerIntervalMs,
                    flushCheckpointMs = config.logFlushOffsetCheckpointIntervalMs,
                    retentionCheckMs = config.logCleanupIntervalMs,

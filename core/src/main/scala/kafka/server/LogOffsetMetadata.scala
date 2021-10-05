@@ -38,8 +38,10 @@ object LogOffsetMetadata {
  *  2. the base message offset of the located segment
  *  3. the physical position on the located segment
  */
-case class LogOffsetMetadata(messageOffset: Long,
+case class LogOffsetMetadata(messageOffset: Long,//记录了Log中最后一个offset值
+                             //记录了activeSegment的baseoffset
                              segmentBaseOffset: Long = LogOffsetMetadata.UnknownSegBaseOffset,
+                             //记录了activeSegment的大小
                              relativePositionInSegment: Int = LogOffsetMetadata.UnknownFilePosition) {
 
   // check if this offset is already on an older segment compared with the given offset

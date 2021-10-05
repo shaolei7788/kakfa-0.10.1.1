@@ -21,11 +21,13 @@ import kafka.cluster.BrokerEndPoint
 import org.apache.kafka.common.metrics.Metrics
 import org.apache.kafka.common.utils.Time
 
-class ReplicaFetcherManager(brokerConfig: KafkaConfig, replicaMgr: ReplicaManager, metrics: Metrics, time: Time, threadNamePrefix: Option[String] = None, quotaManager: ReplicationQuotaManager)
+class ReplicaFetcherManager(brokerConfig: KafkaConfig, replicaMgr: ReplicaManager, metrics: Metrics, time: Time,
+                            threadNamePrefix: Option[String] = None, quotaManager: ReplicationQuotaManager)
       extends AbstractFetcherManager("ReplicaFetcherManager on broker " + brokerConfig.brokerId,
         "Replica", brokerConfig.numReplicaFetchers) {
 
   override def createFetcherThread(fetcherId: Int, sourceBroker: BrokerEndPoint): AbstractFetcherThread = {
+    //threadNamePrefix 默认none
     val threadName = threadNamePrefix match {
       case None =>
         "ReplicaFetcherThread-%d-%d".format(fetcherId, sourceBroker.id)

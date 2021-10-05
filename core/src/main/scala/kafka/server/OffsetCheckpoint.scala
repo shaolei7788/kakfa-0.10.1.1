@@ -34,6 +34,7 @@ object OffsetCheckpoint {
 /**
  * This class saves out a map of topic/partition=>offsets to a file
  */
+//replication-offset-checkpoint文件 记录了data目录下每个partition的hw
 class OffsetCheckpoint(val file: File) extends Logging {
   import OffsetCheckpoint._
   private val path = file.toPath.toAbsolutePath

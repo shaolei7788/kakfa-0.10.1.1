@@ -42,11 +42,15 @@ class ZookeeperLeaderElector(controllerContext: ControllerContext,
   val index = electionPath.lastIndexOf("/")
   if (index > 0)
     controllerContext.zkUtils.makeSurePersistentPathExists(electionPath.substring(0, index))
+
   val leaderChangeListener = new LeaderChangeListener
 
   def startup {
     inLock(controllerContext.controllerLock) {
+      //todo electionPath = /controller
+      //注册数据改变监听器
       controllerContext.zkUtils.zkClient.subscribeDataChanges(electionPath, leaderChangeListener)
+      //todo 选举
       elect
     }
   }
@@ -61,8 +65,8 @@ class ZookeeperLeaderElector(controllerContext: ControllerContext,
   def elect: Boolean = {
     val timestamp = SystemTime.milliseconds.toString
     val electString = Json.encode(Map("version" -> 1, "brokerid" -> brokerId, "timestamp" -> timestamp))
-   
-   leaderId = getControllerID 
+    //刚进来是-1
+    leaderId = getControllerID
     /* 
      * We can get here during the initial startup and the handleDeleted ZK callback. Because of the potential race condition, 
      * it's possible that the controller has already been elected when we get here. This check will prevent the following 
@@ -78,9 +82,12 @@ class ZookeeperLeaderElector(controllerContext: ControllerContext,
                                                       electString,
                                                       controllerContext.zkUtils.zkConnection.getZookeeper,
                                                       JaasUtils.isZkSecurityEnabled())
+      //创建临时节点 ，创建成功则是leader 创建失败则是follower ,到catch里面
       zkCheckedEphemeral.create()
       info(brokerId + " successfully elected as leader")
       leaderId = brokerId
+      //todo 代理节点变成leader时，会调用 onBecomingLeader   onControllerFailover
+      //todo 代理节被剥夺leader时，会调用 onResigningAsLeader
       onBecomingLeader()
     } catch {
       case e: ZkNodeExistsException =>

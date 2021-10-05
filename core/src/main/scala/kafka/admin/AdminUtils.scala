@@ -122,12 +122,15 @@ object AdminUtils extends Logging with AdminUtilities {
       throw new InvalidReplicationFactorException("replication factor must be larger than 0")
     if (replicationFactor > brokerMetadatas.size)
       throw new InvalidReplicationFactorException(s"replication factor: $replicationFactor larger than available brokers: ${brokerMetadatas.size}")
-    if (brokerMetadatas.forall(_.rack.isEmpty))
-      assignReplicasToBrokersRackUnaware(nPartitions, replicationFactor, brokerMetadatas.map(_.id), fixedStartIndex,
-        startPartitionId)
-    else {
+    if (brokerMetadatas.forall(_.rack.isEmpty)) {
+      //_.rack 为空
+      assignReplicasToBrokersRackUnaware(nPartitions, replicationFactor, brokerMetadatas.map(_.id),
+        fixedStartIndex, startPartitionId)
+    } else {
+      //todo _.rack 不为空
       if (brokerMetadatas.exists(_.rack.isEmpty))
         throw new AdminOperationException("Not all brokers have rack information for replica rack aware assignment")
+      //分配副本到broker
       assignReplicasToBrokersRackAware(nPartitions, replicationFactor, brokerMetadatas, fixedStartIndex,
         startPartitionId)
     }

@@ -49,6 +49,7 @@ object RequestChannel extends Logging {
     val sanitizedUser = QuotaId.sanitize(principal.getName)
   }
 
+  //todo 样例类 会对请求进行解析 形成requestId，header,body 等字段 供Handler使用
   case class Request(processor: Int, connectionId: String, session: Session, private var buffer: ByteBuffer, startTimeMs: Long, securityProtocol: SecurityProtocol) {
     // These need to be volatile because the readers are in the network thread and the writers are in the request
     // handler threads or the purgatory threads
@@ -180,10 +181,17 @@ object RequestChannel extends Logging {
   case object CloseConnectionAction extends ResponseAction
 }
 
+// processor线程 和 Handler 线程之间传递数据就是通过RequestChannel，里面有requestQueue队列
 class RequestChannel(val numProcessors: Int, val queueSize: Int) extends KafkaMetricsGroup {
+  //todo 监听器 主要作用是Handler线程向responseQueues放响应请求时唤醒对应的processor线程
+  // 每次向responseQueues添加请求时都要触发responseListeners列表中的监听器
   private var responseListeners: List[(Int) => Unit] = Nil
+  //todo 核心 processor将读取到请求放入requestQueue，Handler线程从requestQueue队列中取出请求进行处理
+  // 因为多个线程操作，所有选择线程安全的队列
   private val requestQueue = new ArrayBlockingQueue[RequestChannel.Request](queueSize)
+  //todo 多个响应 有几个processor responseQueues就有多大 每个processor 对应数组中的一个队列
   private val responseQueues = new Array[BlockingQueue[RequestChannel.Response]](numProcessors)
+
   for(i <- 0 until numProcessors)
     responseQueues(i) = new LinkedBlockingQueue[RequestChannel.Response]()
 
@@ -212,21 +220,23 @@ class RequestChannel(val numProcessors: Int, val queueSize: Int) extends KafkaMe
     requestQueue.put(request)
   }
 
-  /** Send a response back to the socket server to be sent over the network */
+  //向对应responseQueues队列添加SendAction类型的Response
   def sendResponse(response: RequestChannel.Response) {
     responseQueues(response.processor).put(response)
-    for(onResponse <- responseListeners)
+    //调用监听器
+    for(onResponse <- responseListeners) {
       onResponse(response.processor)
+    }
   }
 
-  /** No operation to take for the request, need to read more over the network */
+  //向对应responseQueues队列添加NoOperAction类型的Response
   def noOperation(processor: Int, request: RequestChannel.Request) {
     responseQueues(processor).put(new RequestChannel.Response(processor, request, null, RequestChannel.NoOpAction))
     for(onResponse <- responseListeners)
       onResponse(processor)
   }
 
-  /** Close the connection for the request */
+  //向对应responseQueues队列添加CloseConnectionAction类型的Response
   def closeConnection(processor: Int, request: RequestChannel.Request) {
     responseQueues(processor).put(new RequestChannel.Response(processor, request, null, RequestChannel.CloseConnectionAction))
     for(onResponse <- responseListeners)
@@ -249,6 +259,7 @@ class RequestChannel(val numProcessors: Int, val queueSize: Int) extends KafkaMe
     response
   }
 
+  //添加监听器
   def addResponseListener(onResponse: Int => Unit) {
     responseListeners ::= onResponse
   }
