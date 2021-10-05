@@ -76,7 +76,6 @@ class ZookeeperLeaderElector(controllerContext: ControllerContext,
        debug("Broker %d has been elected as leader, so stopping the election process.".format(leaderId))
        return amILeader
     }
-
     try {
       val zkCheckedEphemeral = new ZKCheckedEphemeral(electionPath,
                                                       electString,
