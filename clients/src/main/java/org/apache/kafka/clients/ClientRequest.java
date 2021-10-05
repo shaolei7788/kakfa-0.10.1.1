@@ -22,7 +22,10 @@ public final class ClientRequest {
     private final long createdTimeMs;
     private final boolean expectResponse;
     private final RequestSend request;
+
+    //回调函数
     private final RequestCompletionHandler callback;
+
     private final boolean isInitiatedByNetworkClient;
     private long sendTimeMs;
 

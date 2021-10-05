@@ -21,6 +21,9 @@ import org.apache.kafka.common.record.Record;
 
 /**
  * The metadata for a record that has been acknowledged by the server
+ *
+ * 记录了消息的元数据信息
+ * 当前消息的主题,分区号,分区中的偏移量(offset),时间戳等
  */
 public final class RecordMetadata {
 

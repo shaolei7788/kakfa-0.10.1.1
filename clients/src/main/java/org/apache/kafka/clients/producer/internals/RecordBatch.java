@@ -12,9 +12,6 @@
  */
 package org.apache.kafka.clients.producer.internals;
 
-import java.util.ArrayList;
-import java.util.List;
-
 import org.apache.kafka.clients.producer.Callback;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.TopicPartition;
@@ -23,6 +20,9 @@ import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.Record;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * A batch of records that is or will be sent.
@@ -35,9 +35,11 @@ public final class RecordBatch {
 
     public int recordCount = 0;
     public int maxRecordSize = 0;
+    //重试的次数,默认是0
     public volatile int attempts = 0;
     public final long createdMs;
     public long drainedMs;
+    //上一次重试的时间
     public long lastAttemptMs;
     public final MemoryRecords records;
     public final TopicPartition topicPartition;
@@ -45,8 +47,6 @@ public final class RecordBatch {
     public long lastAppendTime;
     private final List<Thunk> thunks;
     private long offsetCounter = 0L;
-    private boolean retry;
-
     public RecordBatch(TopicPartition tp, MemoryRecords records, long now) {
         this.createdMs = now;
         this.lastAttemptMs = now;
@@ -58,15 +58,18 @@ public final class RecordBatch {
         this.retry = false;
     }
 
+    private boolean retry;
+
     /**
      * Append the record to the current record set and return the relative offset within that record set
-     * 
+     * 追加消息到当前的消息记录集合中,并返回当前记录集的相对偏移量(大小)
      * @return The RecordSend corresponding to this record or null if there isn't sufficient room.
      */
     public FutureRecordMetadata tryAppend(long timestamp, byte[] key, byte[] value, Callback callback, long now) {
         if (!this.records.hasRoomFor(key, value)) {
             return null;
         } else {
+            //TODO 将数据写入RecordBatch
             long checksum = this.records.append(offsetCounter++, timestamp, key, value);
             this.maxRecordSize = Math.max(this.maxRecordSize, Record.recordSize(key, value));
             this.lastAppendTime = now;
@@ -94,9 +97,14 @@ public final class RecordBatch {
                   baseOffset,
                   exception);
         // execute callbacks
+        /**
+         * 我们发送数据的时候,一条消息就代表一个thunk
+         * 遍历我们所有发出去的消息
+         */
         for (int i = 0; i < this.thunks.size(); i++) {
             try {
                 Thunk thunk = this.thunks.get(i);
+                //exception == null代表响应里面没有异常
                 if (exception == null) {
                     // If the timestamp returned by server is NoTimestamp, that means CreateTime is used. Otherwise LogAppendTime is used.
                     RecordMetadata metadata = new RecordMetadata(this.topicPartition,  baseOffset, thunk.future.relativeOffset(),
@@ -104,6 +112,8 @@ public final class RecordBatch {
                                                                  thunk.future.checksum(),
                                                                  thunk.future.serializedKeySize(),
                                                                  thunk.future.serializedValueSize());
+                    //没有异常,就会调用消息的回调函数中的回调方法
+                    //这里的回调函数就是生产者发送消息时传入的
                     thunk.callback.onCompletion(metadata, null);
                 } else {
                     thunk.callback.onCompletion(null, exception);
@@ -143,13 +153,31 @@ public final class RecordBatch {
     public boolean maybeExpire(int requestTimeoutMs, long retryBackoffMs, long now, long lingerMs, boolean isFull) {
         boolean expire = false;
         String errorMessage = null;
-
+        /**
+         * requestTimeoutMs: 请求超时的时长,默认是30s
+         * now: 当前时间
+         * lastAppendTime: 批次的创建时间(上次重试的时间)
+         * now - this.lastAppendTime:大于30s,说明批次超时了,没有发送出去
+         */
         if (!this.inRetry() && isFull && requestTimeoutMs < (now - this.lastAppendTime)) {
             expire = true;
+            //记录异常信息
             errorMessage = (now - this.lastAppendTime) + " ms has passed since last append";
+            /**
+             * lingerMs: 100ms,无论如何都要把消息发送出去的时间
+             * createdMs: 创建批次的时间
+             *
+             * 已经大于30s了,说明也是超时了
+             */
         } else if (!this.inRetry() && requestTimeoutMs < (now - (this.createdMs + lingerMs))) {
             expire = true;
             errorMessage = (now - (this.createdMs + lingerMs)) + " ms has passed since batch creation plus linger time";
+            /**
+             *  针对重试:
+             *   lastAttemptMs: 上次重试的时间(批次创建的时间)
+             *   retryBackoffMs: 重试的时间间隔
+             *   说明也超时了
+             */
         } else if (this.inRetry() && requestTimeoutMs < (now - (this.lastAttemptMs + retryBackoffMs))) {
             expire = true;
             errorMessage = (now - (this.lastAttemptMs + retryBackoffMs)) + " ms has passed since last attempt plus backoff time";
@@ -157,6 +185,9 @@ public final class RecordBatch {
 
         if (expire) {
             this.records.close();
+            //调用done方法
+            //方法里面传入一个TimeoutException异常
+            //TODO 处理超时的批次
             this.done(-1L, Record.NO_TIMESTAMP,
                       new TimeoutException("Expiring " + recordCount + " record(s) for " + topicPartition + " due to " + errorMessage));
         }

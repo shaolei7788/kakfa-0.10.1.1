@@ -46,6 +46,7 @@ final class InFlightRequests {
 
     /**
      * Get the request queue for the given node
+     * 获取给定节点的请求队列
      */
     private Deque<ClientRequest> requestQueue(String node) {
         Deque<ClientRequest> reqs = requests.get(node);
@@ -56,6 +57,7 @@ final class InFlightRequests {
 
     /**
      * Get the oldest request (the one that that will be completed next) for the given node
+     * 从给定的节点中获得已经发送的请求列表,检索并删除请求列表的最后一个元素
      */
     public ClientRequest completeNext(String node) {
         return requestQueue(node).pollLast();

@@ -48,39 +48,47 @@ import java.util.regex.Pattern;
  * partitions. This is updated through {@link #committed(TopicPartition, OffsetAndMetadata)} and can be used
  * to set the initial fetch position (e.g. {@link Fetcher#resetOffset(TopicPartition)}.
  */
+//消费者订阅状态 保存了分配给消费者的所有分区及其状态
 public class SubscriptionState {
-    private static final String SUBSCRIPTION_EXCEPTION_MESSAGE =
-            "Subscription to topics, partitions and pattern are mutually exclusive";
+    private static final String SUBSCRIPTION_EXCEPTION_MESSAGE = "Subscription to topics, partitions and pattern are mutually exclusive";
 
     private enum SubscriptionType {
         NONE, AUTO_TOPICS, AUTO_PATTERN, USER_ASSIGNED
+        //NONE 初始值
+        //AUTO_TOPICS 自动分配分区
+        //AUTO_PATTERN 按指定正则表达式进行自动分配分区
+        //USER_ASSIGNED 手动指定消费的topic
     }
 
     /* the type of subscription */
+    //内部枚举类 订阅类型
     private SubscriptionType subscriptionType;
 
-    /* the pattern user has requested */
+    //正则表达式订阅的主题
     private Pattern subscribedPattern;
 
     /* the list of topics the user has requested */
+    //消费者订阅的主题
     private Set<String> subscription;
 
-    /* the list of partitions the user has requested */
+    //用户分配的分区
     private Set<TopicPartition> userAssignment;
 
     /* the list of topics the group has subscribed to (set only for the leader on join group completion) */
+    //todo 消费组订阅的主题  leader会将消费者组所有的topic添加到 groupSubscription follower则只关心自己的topic
     private final Set<String> groupSubscription;
 
-    /* the partitions that are currently assigned, note that the order of partition matters (see FetchBuilder for more details) */
+    //todo 存储消费者当前分区的分区及状态
+    // SubscriptionState保存了分配给消费者的所有分区及其状态
     private final PartitionStates<TopicPartitionState> assignment;
 
-    /* do we need to request the latest committed offsets from the coordinator? */
+    //需要拉取偏移量标识
     private boolean needsFetchCommittedOffsets;
 
-    /* Default offset reset strategy */
+    //默认分区策略
     private final OffsetResetStrategy defaultResetStrategy;
 
-    /* Listener to be invoked when assignment changes */
+    //消费再平衡监听器
     private ConsumerRebalanceListener listener;
 
     public SubscriptionState(OffsetResetStrategy defaultResetStrategy) {
@@ -111,6 +119,7 @@ public class SubscriptionState {
         if (listener == null)
             throw new IllegalArgumentException("RebalanceListener cannot be null");
 
+        //todo 设置订阅类型 自动分配分区
         setSubscriptionType(SubscriptionType.AUTO_TOPICS);
 
         this.listener = listener;
@@ -127,6 +136,7 @@ public class SubscriptionState {
     }
 
     private void changeSubscription(Set<String> topicsToSubscribe) {
+        //判断 subscription 跟 topicsToSubscribe 是否完全相同
         if (!this.subscription.equals(topicsToSubscribe)) {
             this.subscription = topicsToSubscribe;
             this.groupSubscription.addAll(topicsToSubscribe);
@@ -256,6 +266,7 @@ public class SubscriptionState {
         return this.groupSubscription;
     }
 
+    //获取指定分区的状态对象
     private TopicPartitionState assignedState(TopicPartition tp) {
         TopicPartitionState state = this.assignment.stateValue(tp);
         if (state == null)
@@ -263,10 +274,12 @@ public class SubscriptionState {
         return state;
     }
 
+    //更新分区的消费偏移量
     public void committed(TopicPartition tp, OffsetAndMetadata offset) {
         assignedState(tp).committed(offset);
     }
 
+    //获取分区最新提交的偏移量
     public OffsetAndMetadata committed(TopicPartition tp) {
         return assignedState(tp).committed;
     }
@@ -283,6 +296,7 @@ public class SubscriptionState {
         this.needsFetchCommittedOffsets = false;
     }
 
+    //定位到分区的指定位置，更新拉取偏移量
     public void seek(TopicPartition tp, long offset) {
         assignedState(tp).seek(offset);
     }
@@ -291,6 +305,7 @@ public class SubscriptionState {
         return this.assignment.partitionSet();
     }
 
+    //获取允许拉取，即存在拉取偏移量的分区，用来构建拉取请求
     public List<TopicPartition> fetchablePartitions() {
         List<TopicPartition> fetchable = new ArrayList<>();
         for (PartitionStates.PartitionState<TopicPartitionState> state : assignment.partitionStates()) {
@@ -304,10 +319,12 @@ public class SubscriptionState {
         return this.subscriptionType == SubscriptionType.AUTO_TOPICS || this.subscriptionType == SubscriptionType.AUTO_PATTERN;
     }
 
+    //设置分区的拉取偏移量
     public void position(TopicPartition tp, long offset) {
         assignedState(tp).position(offset);
     }
 
+    //获取分区拉取的偏移量
     public Long position(TopicPartition tp) {
         return assignedState(tp).position;
     }
@@ -341,6 +358,7 @@ public class SubscriptionState {
         return assignedState(partition).resetStrategy;
     }
 
+    //todo 判断是否所有的分区都存在有效的拉取偏移量
     public boolean hasAllFetchPositions() {
         for (TopicPartitionState state : assignment.partitionStateValues())
             if (!state.hasValidPosition())
@@ -348,6 +366,7 @@ public class SubscriptionState {
         return true;
     }
 
+    //todo 没有拉取偏移量的分区
     public Set<TopicPartition> missingFetchPositions() {
         Set<TopicPartition> missing = new HashSet<>();
         for (PartitionStates.PartitionState<TopicPartitionState> state : assignment.partitionStates()) {
@@ -369,10 +388,12 @@ public class SubscriptionState {
         return isAssigned(tp) && assignedState(tp).isFetchable();
     }
 
+    //暂停拉取分区
     public void pause(TopicPartition tp) {
         assignedState(tp).pause();
     }
 
+    //恢复拉取分区
     public void resume(TopicPartition tp) {
         assignedState(tp).resume();
     }
@@ -385,11 +406,18 @@ public class SubscriptionState {
         return listener;
     }
 
+    //todo 分区状态
+    // 消费者拉取消息时要更新拉取偏移量
+    // 处理消息时要更新提交偏移量
     private static class TopicPartitionState {
+        //todo 上次消费的位置 下次拉取就是从这个位置开始拉取 表示分区的拉取进度，它的值不为空，消费者才可以拉取这分区
         private Long position; // last consumed position
+        //
         private OffsetAndMetadata committed;  // last committed position
-        private boolean paused;  // whether this partition has been paused by the user
-        private OffsetResetStrategy resetStrategy;  // the strategy to use if the offset needs resetting
+        //分区是否被暂停拉取
+        private boolean paused;
+        //重置策略
+        private OffsetResetStrategy resetStrategy;
 
         public TopicPartitionState() {
             this.paused = false;
@@ -398,6 +426,7 @@ public class SubscriptionState {
             this.resetStrategy = null;
         }
 
+        //重置拉取偏移量
         private void awaitReset(OffsetResetStrategy strategy) {
             this.resetStrategy = strategy;
             this.position = null;
@@ -411,17 +440,20 @@ public class SubscriptionState {
             return position != null;
         }
 
+        //从指定的位置拉取数据
         private void seek(long offset) {
             this.position = offset;
             this.resetStrategy = null;
         }
 
+        //更新偏移量 更新拉取状态
         private void position(long offset) {
             if (!hasValidPosition())
                 throw new IllegalStateException("Cannot set a new position without a valid current position");
             this.position = offset;
         }
 
+        //更新提交偏移量 定时提交任务用 更新消费状态
         private void committed(OffsetAndMetadata offset) {
             this.committed = offset;
         }

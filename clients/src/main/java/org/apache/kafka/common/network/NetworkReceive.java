@@ -77,11 +77,15 @@ public class NetworkReceive implements Receive {
     @Deprecated
     public long readFromReadableChannel(ReadableByteChannel channel) throws IOException {
         int read = 0;
+        //size是一个内存大小4字节的内存空间,默认值
+        //判断size空间是否还有剩余
         if (size.hasRemaining()) {
+            //先读取一个4字节大小的内存空间(代表后面跟着的消息体大小是4字节)
             int bytesRead = channel.read(size);
             if (bytesRead < 0)
                 throw new EOFException();
             read += bytesRead;
+            //一直到size用完为止
             if (!size.hasRemaining()) {
                 size.rewind();
                 int receiveSize = size.getInt();
@@ -94,6 +98,7 @@ public class NetworkReceive implements Receive {
             }
         }
         if (buffer != null) {
+            //读取数据
             int bytesRead = channel.read(buffer);
             if (bytesRead < 0)
                 throw new EOFException();

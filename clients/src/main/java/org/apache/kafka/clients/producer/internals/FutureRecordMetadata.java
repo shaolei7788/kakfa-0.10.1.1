@@ -21,6 +21,7 @@ import org.apache.kafka.clients.producer.RecordMetadata;
 
 /**
  * The future result of a record send
+ * 一个任务的生命周期,提供了相应的方法来判断任务是否已经完成或者取消,以及获取任务的结果和取消任务等
  */
 public final class FutureRecordMetadata implements Future<RecordMetadata> {
 
@@ -48,6 +49,7 @@ public final class FutureRecordMetadata implements Future<RecordMetadata> {
 
     @Override
     public RecordMetadata get() throws InterruptedException, ExecutionException {
+        //阻塞等待响应
         this.result.await();
         return valueOrError();
     }
@@ -66,7 +68,7 @@ public final class FutureRecordMetadata implements Future<RecordMetadata> {
         else
             return value();
     }
-    
+    //消息的主题,分区号,分区中的偏移量,时间戳等信息
     RecordMetadata value() {
         return new RecordMetadata(result.topicPartition(), this.result.baseOffset(), this.relativeOffset,
                                   this.timestamp, this.checksum, this.serializedKeySize, this.serializedValueSize);

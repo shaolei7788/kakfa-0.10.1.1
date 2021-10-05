@@ -26,18 +26,36 @@ import java.util.Set;
 
 /**
  * A representation of a subset of the nodes, topics, and partitions in the Kafka cluster.
+ * 该对象包含Kafka集群中节点、主题和分区的子集
  */
 public final class Cluster {
 
+    //是否已经引导配置
     private final boolean isBootstrapConfigured;
+    //我们一个kafka集群是有多个节点,这个参数代表的就是kafka的服务器信息
     private final List<Node> nodes;
+    //没有授权的topic
     private final Set<String> unauthorizedTopics;
+    //内部主题
     private final Set<String> internalTopics;
+    /**
+     * 这里有很多数据结构,这些数据结构里面有些数据可能是冗余的
+     * 这里面用到的思想就是用空间换时间,设置适当的冗余的数据结构,可以提升性能
+     */
+    //一个partition和partition的相关信息之间的对应关系
+    //因为partition有副本
     private final Map<TopicPartition, PartitionInfo> partitionsByTopicPartition;
+    //一个topic对应哪些分区
     private final Map<String, List<PartitionInfo>> partitionsByTopic;
+    //一个topic对应哪些可用的分区
     private final Map<String, List<PartitionInfo>> availablePartitionsByTopic;
+    //一台服务器上和这台服务器上有哪些partition,key用的是服务器的编号
+    //我们搭建kafka集群的时候设置的broker.id,一般从0开始 每个broker都有一个唯一的id值用来区分彼此
+    //默认情况下broker.id值为-1。Kafka broker的id值必须大于等于0时才有可能正常启动
     private final Map<Integer, List<PartitionInfo>> partitionsByNode;
+    //服务器编号和服务器对应的关系
     private final Map<Integer, Node> nodesById;
+    //kafka集群的id信息
     private final ClusterResource clusterResource;
 
     /**
@@ -226,7 +244,9 @@ public final class Cluster {
 
     /**
      * Get the number of partitions for the given topic
+     * 得到给定主题的分区数量
      * @param topic The topic to get the number of partitions for
+     *              要获取其分区数的主题
      * @return The number of partitions or null if there is no corresponding metadata
      */
     public Integer partitionCountForTopic(String topic) {

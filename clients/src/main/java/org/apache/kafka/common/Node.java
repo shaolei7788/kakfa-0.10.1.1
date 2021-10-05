@@ -14,15 +14,20 @@ package org.apache.kafka.common;
 
 /**
  * Information about a Kafka node
+ * 一个kafka的节点的信息
  */
 public class Node {
 
     private static final Node NO_NODE = new Node(-1, "", -1);
-
+    //id编号,我们配置参数的时候指定的broker.id
     private final int id;
+    //节点id的字符串表示
     private final String idString;
+    //端口号,默认是9092
     private final String host;
+    //主机名
     private final int port;
+    //机架
     private final String rack;
 
     public Node(int id, String host, int port) {
@@ -61,6 +66,8 @@ public class Node {
     /**
      * String representation of the node id.
      * Typically the integer id is used to serialize over the wire, the string representation is used as an identifier with NetworkClient code
+     * 节点id的字符串表示.
+     * 通常，整数id用于在网络上序列化，字符串表示法用作NetworkClient代码的标识符
      */
     public String idString() {
         return idString;

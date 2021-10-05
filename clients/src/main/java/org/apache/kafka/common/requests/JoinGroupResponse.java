@@ -56,8 +56,11 @@ public class JoinGroupResponse extends AbstractRequestResponse {
     private final short errorCode;
     private final int generationId;
     private final String groupProtocol;
+    //Group Coordinator 分配给消费者的id
     private final String memberId;
+    //leader 的 memberId
     private final String leaderId;
+    //Consumer Group 中全部的消费者订阅消息
     private final Map<String, ByteBuffer> members;
 
     public JoinGroupResponse(short errorCode,

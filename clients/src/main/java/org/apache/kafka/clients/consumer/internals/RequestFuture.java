@@ -41,6 +41,7 @@ public class RequestFuture<T> implements ConsumerNetworkClient.PollCondition {
 
     private static final Object INCOMPLETE_SENTINEL = new Object();
     private final AtomicReference<Object> result = new AtomicReference<>(INCOMPLETE_SENTINEL);
+    //监听器
     private final ConcurrentLinkedQueue<RequestFutureListener<T>> listeners = new ConcurrentLinkedQueue<>();
 
     /**
@@ -68,6 +69,7 @@ public class RequestFuture<T> implements ConsumerNetworkClient.PollCondition {
      * @return true if the request completed and was successful
      */
     public boolean succeeded() {
+        //isDone() 表示当前请求是否完成
         return isDone() && !failed();
     }
 
@@ -160,10 +162,6 @@ public class RequestFuture<T> implements ConsumerNetworkClient.PollCondition {
         }
     }
 
-    /**
-     * Add a listener which will be notified when the future completes
-     * @param listener non-null listener to add
-     */
     public void addListener(RequestFutureListener<T> listener) {
         this.listeners.add(listener);
         if (failed())
@@ -172,15 +170,13 @@ public class RequestFuture<T> implements ConsumerNetworkClient.PollCondition {
             fireSuccess();
     }
 
-    /**
-     * Convert from a request future of one type to another type
-     * @param adapter The adapter which does the conversion
-     * @param <S> The type of the future adapted to
-     * @return The new future
-     */
+    // todo 公共方法
+    //adapter =  GroupCoordinatorResponseHandler
+    //adapter = OffsetCommitResponseHandler
     public <S> RequestFuture<S> compose(final RequestFutureAdapter<T, S> adapter) {
         final RequestFuture<S> adapted = new RequestFuture<>();
-        addListener(new RequestFutureListener<T>() {
+        //todo 在当前RequestFuture上添加监听器
+        RequestFutureListener<T> requestFutureListener = new RequestFutureListener<T>() {
             @Override
             public void onSuccess(T value) {
                 adapter.onSuccess(value, adapted);
@@ -190,7 +186,8 @@ public class RequestFuture<T> implements ConsumerNetworkClient.PollCondition {
             public void onFailure(RuntimeException e) {
                 adapter.onFailure(e, adapted);
             }
-        });
+        };
+        addListener(requestFutureListener);
         return adapted;
     }
 

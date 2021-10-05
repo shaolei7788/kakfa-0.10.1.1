@@ -58,6 +58,7 @@ public class LeaderAndIsrRequest extends AbstractRequest {
 
     private final int controllerId;
     private final int controllerEpoch;
+    //包含了每个分区的leader副本所在的brokerid,isr集合，ar集合，以及zk_version
     private final Map<TopicPartition, PartitionState> partitionStates;
     private final Set<Node> liveLeaders;
 

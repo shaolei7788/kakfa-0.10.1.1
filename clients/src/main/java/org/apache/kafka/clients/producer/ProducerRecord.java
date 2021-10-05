@@ -38,11 +38,16 @@ package org.apache.kafka.clients.producer;
  */
 public final class ProducerRecord<K, V> {
 
-    private final String topic;
-    private final Integer partition;
-    private final K key;
-    private final V value;
-    private final Long timestamp;
+    private final String topic;//消息要发往的主题
+    private final Integer partition;//消息要发往的分区号
+    //key不仅是消息的附加信息,还可以用来计算分区号,进而可以让消息发往特定的分区
+    //消息可以以主题为单位进行归类,key可以让消息进行二次归类,同一个key的消息可以被划分到同一个分区中
+    //有key的消息可以支持日志压缩功能
+    private final K key;//键
+    //value是指消息体,一般不为空,如果为空则表示特定的消息--墓碑消息
+    private final V value;//值
+    //timestamp有两种类型: CreateTime 表是消息创建的时间 LogAppendTime 表是消息追加到日志文件的时间
+    private final Long timestamp;//消息的时间戳
 
     /**
      * Creates a record with a specified timestamp to be sent to a specified topic and partition
@@ -132,6 +137,8 @@ public final class ProducerRecord<K, V> {
 
     /**
      * @return The partition to which the record will be sent (or null if no partition was specified)
+     *
+     * 记录将被发送到的分区（如果没有指定分区，则为null）
      */
     public Integer partition() {
         return partition;

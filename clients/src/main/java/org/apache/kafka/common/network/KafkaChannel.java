@@ -18,22 +18,24 @@
 package org.apache.kafka.common.network;
 
 
-import java.io.IOException;
+import org.apache.kafka.common.utils.Utils;
 
+import java.io.IOException;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.nio.channels.SelectionKey;
-
 import java.security.Principal;
-
-import org.apache.kafka.common.utils.Utils;
-
+//TODO 我们认为KafkaChannel就是对javaNIO中的socketChannel进行了封装
 public class KafkaChannel {
+    //broker的id
+    //一个brokerId对应一个kafkaChannel
     private final String id;
     private final TransportLayer transportLayer;
     private final Authenticator authenticator;
     private final int maxReceiveSize;
+    //接收到的响应
     private NetworkReceive receive;
+    //发出去的请求
     private Send send;
 
     public KafkaChannel(String id, TransportLayer transportLayer, Authenticator authenticator, int maxReceiveSize) throws IOException {
@@ -121,7 +123,10 @@ public class KafkaChannel {
     public void setSend(Send send) {
         if (this.send != null)
             throw new IllegalStateException("Attempt to begin a send operation with prior send operation still in progress.");
+        //往KafkaChannel里面绑定一个发送请求
         this.send = send;
+        //这里绑定了一个OP_WRITE事件
+        //绑定了OP_WRITE事件之后,就可以往服务端发送请求了
         this.transportLayer.addInterestOps(SelectionKey.OP_WRITE);
     }
 
@@ -131,8 +136,9 @@ public class KafkaChannel {
         if (receive == null) {
             receive = new NetworkReceive(maxReceiveSize, id);
         }
-
+        //一直在读取数据
         receive(receive);
+        //是否读完一个完整的响应消息
         if (receive.complete()) {
             receive.payload().rewind();
             result = receive;
@@ -143,6 +149,7 @@ public class KafkaChannel {
 
     public Send write() throws IOException {
         Send result = null;
+        //send方法就是发送网络请求的方法
         if (send != null && send(send)) {
             result = send;
             send = null;
@@ -155,8 +162,10 @@ public class KafkaChannel {
     }
 
     private boolean send(Send send) throws IOException {
+        //最终执行发送请求的代码就在这里
         send.writeTo(transportLayer);
         if (send.completed())
+            //移除OP_WRITE
             transportLayer.removeInterestOps(SelectionKey.OP_WRITE);
 
         return send.completed();

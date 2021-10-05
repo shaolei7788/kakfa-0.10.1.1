@@ -17,6 +17,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * A wrapper for Thread that sets things up nicely
+ * 一个线程包装器,用于包装传入的线程对象,可以很优雅的设置和处理相关事宜
  */
 public class KafkaThread extends Thread {
 
@@ -24,6 +25,7 @@ public class KafkaThread extends Thread {
 
     public KafkaThread(final String name, Runnable runnable, boolean daemon) {
         super(runnable, name);
+        //设置为后台线程
         setDaemon(daemon);
         setUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
             public void uncaughtException(Thread t, Throwable e) {

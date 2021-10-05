@@ -40,6 +40,7 @@ import java.util.Set;
  */
 public class PartitionStates<S> {
 
+    //todo S 很多情况下是 TopicPartitionState
     private final LinkedHashMap<TopicPartition, S> map = new LinkedHashMap<>();
 
     public PartitionStates() {}

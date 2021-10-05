@@ -30,7 +30,6 @@ public class GroupCoordinatorRequest extends AbstractRequest {
 
     public GroupCoordinatorRequest(String groupId) {
         super(new Struct(CURRENT_SCHEMA));
-
         struct.set(GROUP_ID_KEY_NAME, groupId);
         this.groupId = groupId;
     }

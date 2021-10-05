@@ -18,6 +18,7 @@ package org.apache.kafka.common;
 
 /**
  * The base class of all other Kafka exceptions
+ * 所有其他Kafka异常的基类
  */
 public class KafkaException extends RuntimeException {
 
