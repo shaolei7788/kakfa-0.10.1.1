@@ -426,10 +426,13 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
               debug("Topic change listener fired for path %s with children %s".format(parentPath, children.mkString(",")))
               (children: Buffer[String]).toSet
             }
+            //todo 新增的分区
             val newTopics = currentChildren -- controllerContext.allTopics
+            //todo 要删除的分区
             val deletedTopics = controllerContext.allTopics -- currentChildren
+            //更新上下文对象的主题列表
             controllerContext.allTopics = currentChildren
-
+            //更新上下文对象的分区信息，过滤被删除的主题，增加新主题对应的分区信息
             val addedPartitionReplicaAssignment = zkUtils.getReplicaAssignmentForTopics(newTopics.toSeq)
             controllerContext.partitionReplicaAssignment = controllerContext.partitionReplicaAssignment.filter(p =>
               !deletedTopics.contains(p._1.topic))
@@ -500,25 +503,32 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
     }
   }
 
+  //更改分区的监听器
   class PartitionModificationsListener(topic: String) extends IZkDataListener with Logging {
 
     this.logIdent = "[AddPartitionsListener on " + controller.config.brokerId + "]: "
 
+    //分区改变事情
     @throws(classOf[Exception])
     def handleDataChange(dataPath : String, data: Object) {
       inLock(controllerContext.controllerLock) {
         try {
           info(s"Partition modification triggered $data for path $dataPath")
-          val partitionReplicaAssignment = zkUtils.getReplicaAssignmentForTopics(List(topic))
+          // 注册在/brokers/topics/[topic],内容为该主题所有分区对应的副本集
+          val partitionReplicaAssignment  = zkUtils.getReplicaAssignmentForTopics(List(topic))
+          // 不在上下文中表示新增的分区
           val partitionsToBeAdded = partitionReplicaAssignment.filter(p =>
             !controllerContext.partitionReplicaAssignment.contains(p._1))
+          //判断分区是否能被删除
           if(controller.deleteTopicManager.isTopicQueuedUpForDeletion(topic))
             error("Skipping adding partitions %s for topic %s since it is currently being deleted"
                   .format(partitionsToBeAdded.map(_._1.partition).mkString(","), topic))
           else {
             if (partitionsToBeAdded.nonEmpty) {
               info("New partitions to be added %s".format(partitionsToBeAdded))
+              //上下文增加对象
               controllerContext.partitionReplicaAssignment.++=(partitionsToBeAdded)
+              //控制器处理分区的新增事件
               controller.onNewPartitionCreation(partitionsToBeAdded.keySet.toSet)
             }
           }
