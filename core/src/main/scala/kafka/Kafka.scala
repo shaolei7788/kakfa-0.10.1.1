@@ -64,7 +64,6 @@ object Kafka extends Logging {
           kafkaServerStartable.shutdown
         }
       })
-
       kafkaServerStartable.startup
       kafkaServerStartable.awaitShutdown
     }
