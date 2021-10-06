@@ -193,7 +193,7 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
   //用于对指定的topic进行删除
   var deleteTopicManager: TopicDeletionManager = null
 
-  //PartitionLeaderSelector 选举分区的主副本
+  // PartitionLeaderSelector 四个选举分区主副本的类
   val offlinePartitionSelector = new OfflinePartitionLeaderSelector(controllerContext, config)
   private val reassignedPartitionLeaderSelector = new ReassignedPartitionLeaderSelector(controllerContext)
   private val preferredReplicaPartitionLeaderSelector = new PreferredReplicaPartitionLeaderSelector(controllerContext)
@@ -356,7 +356,7 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
       //启动两个状态机
       replicaStateMachine.startup()
       partitionStateMachine.startup()
-      // register the partition change listeners for all existing topics on failover
+      //todo 注册分区更改监听器
       controllerContext.allTopics.foreach(topic => partitionStateMachine.registerPartitionChangeListener(topic))
       info("Broker %d is ready to serve as the new controller with epoch %d".format(config.brokerId, epoch))
       //可能触发分区重新分配
@@ -442,28 +442,28 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
    * 2. Even if we do refresh the cache, there is no guarantee that by the time the leader and ISR request reaches
    *    every broker that it is still valid.  Brokers check the leader epoch to determine validity of the request.
    */
+  //todo broker上线后调用
   def onBrokerStartup(newBrokers: Seq[Int]) {
     info("New broker startup callback for %s".format(newBrokers.mkString(",")))
     val newBrokersSet = newBrokers.toSet
-    // send update metadata request to all live and shutting down brokers. Old brokers will get to know of the new
-    // broker via this update.
-    // In cases of controlled shutdown leaders will not be elected when a new broker comes up. So at least in the
-    // common controlled shutdown case, the metadata will reach the new brokers faster
+    // 发送 更新元数据 请求给所有代理节点，旧节点在这次更新时知道有这些节点加入
     sendUpdateMetadataRequest(controllerContext.liveOrShuttingDownBrokerIds.toSeq)
     // the very first thing to do when a new broker comes up is send it the entire list of partitions that it is
     // supposed to host. Based on that the broker starts the high watermark threads for the input list of partitions
     val allReplicasOnNewBrokers = controllerContext.replicasOnBrokers(newBrokersSet)
+    //上线节点上的所有副本转换为上线
     replicaStateMachine.handleStateChanges(allReplicasOnNewBrokers, OnlineReplica)
-    // when a new broker comes up, the controller needs to trigger leader election for all new and offline partitions
-    // to see if these brokers can become leaders for some/all of those
+    //如果分区状态为新建或下线 则重新选举主副本，并转为上线状态 已经是在线状态则不变
     partitionStateMachine.triggerOnlinePartitionStateChange()
     // check if reassignment of some partitions need to be restarted
+    //如果重新分配分区的新副本在上线节点中，则重新分配分区
     val partitionsWithReplicasOnNewBrokers = controllerContext.partitionsBeingReassigned.filter {
       case (topicAndPartition, reassignmentContext) => reassignmentContext.newReplicas.exists(newBrokersSet.contains(_))
     }
     partitionsWithReplicasOnNewBrokers.foreach(p => onPartitionReassignment(p._1, p._2))
     // check if topic deletion needs to be resumed. If at least one replica that belongs to the topic being deleted exists
     // on the newly restarted brokers, there is a chance that topic deletion can resume
+    //代理节点下线时，不能执行 删除副本，上线后，恢复删除副本的操作
     val replicasForTopicsToBeDeleted = allReplicasOnNewBrokers.filter(p => deleteTopicManager.isTopicQueuedUpForDeletion(p.topic))
     if(replicasForTopicsToBeDeleted.nonEmpty) {
       info(("Some replicas %s for topics scheduled for deletion %s are on the newly restarted brokers %s. " +
@@ -528,8 +528,9 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
    */
   def onNewTopicCreation(topics: Set[String], newPartitions: Set[TopicAndPartition]) {
     info("New topic creation callback for %s".format(newPartitions.mkString(",")))
-    // subscribe to partition changes
+    //todo 给新增加的topic 注册分区改变监听器
     topics.foreach(topic => partitionStateMachine.registerPartitionChangeListener(topic))
+    //todo 核心
     onNewPartitionCreation(newPartitions)
   }
 
@@ -541,8 +542,12 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
    */
   def onNewPartitionCreation(newPartitions: Set[TopicAndPartition]) {
     info("New partition creation callback for %s".format(newPartitions.mkString(",")))
+    //将分区状态改为NewPartition
     partitionStateMachine.handleStateChanges(newPartitions, NewPartition)
+    // replicasForPartition = 获取指定分区集合的副本
     replicaStateMachine.handleStateChanges(controllerContext.replicasForPartition(newPartitions), NewReplica)
+    //todo offlinePartitionSelector 分区选择器 分区从新建状态到上线状态并不会用到offlinePartitionSelector
+    // 只有下线状态(broker挂了)，上线状态(分区有主副本且活着，但是控制器选区其它副本作为leader) 到上线状态
     partitionStateMachine.handleStateChanges(newPartitions, OnlinePartition, offlinePartitionSelector)
     replicaStateMachine.handleStateChanges(controllerContext.replicasForPartition(newPartitions), OnlineReplica)
   }

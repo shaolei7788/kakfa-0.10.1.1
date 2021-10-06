@@ -23,6 +23,7 @@ import kafka.utils.Logging
 import kafka.common.{LeaderElectionNotNeededException, TopicAndPartition, StateChangeFailedException, NoReplicaOnlineException}
 import kafka.server.{ConfigType, KafkaConfig}
 
+//分区leader选择器
 trait PartitionLeaderSelector {
 
   /**
@@ -46,6 +47,7 @@ trait PartitionLeaderSelector {
  * Replicas to receive LeaderAndIsr request = live assigned replicas
  * Once the leader is successfully registered in zookeeper, it updates the allLeaders cache
  */
+//主副本不可用，选举主副本
 class OfflinePartitionLeaderSelector(controllerContext: ControllerContext, config: KafkaConfig)
   extends PartitionLeaderSelector with Logging {
   this.logIdent = "[OfflinePartitionLeaderSelector]: "
@@ -53,14 +55,16 @@ class OfflinePartitionLeaderSelector(controllerContext: ControllerContext, confi
   def selectLeader(topicAndPartition: TopicAndPartition, currentLeaderAndIsr: LeaderAndIsr): (LeaderAndIsr, Seq[Int]) = {
     controllerContext.partitionReplicaAssignment.get(topicAndPartition) match {
       case Some(assignedReplicas) =>
+        //活着的AR
         val liveAssignedReplicas = assignedReplicas.filter(r => controllerContext.liveBrokerIds.contains(r))
+        //活着的ISR
         val liveBrokersInIsr = currentLeaderAndIsr.isr.filter(r => controllerContext.liveBrokerIds.contains(r))
         val currentLeaderEpoch = currentLeaderAndIsr.leaderEpoch
         val currentLeaderIsrZkPathVersion = currentLeaderAndIsr.zkVersion
         val newLeaderAndIsr =
           if (liveBrokersInIsr.isEmpty) {
-            // Prior to electing an unclean (i.e. non-ISR) leader, ensure that doing so is not disallowed by the configuration
-            // for unclean leader election.
+            //todo ISR 都挂了，只能从存活的AR中选举了
+            // ISR 正在同步的副本集  AR是所有的副本集，如果ISR中的副本落后太多就会被剔除ISR
             if (!LogConfig.fromProps(config.originals, AdminUtils.fetchEntityConfig(controllerContext.zkUtils,
               ConfigType.Topic, topicAndPartition.topic)).uncleanLeaderElectionEnable) {
               throw new NoReplicaOnlineException(("No broker in ISR for partition " +
@@ -81,7 +85,9 @@ class OfflinePartitionLeaderSelector(controllerContext: ControllerContext, confi
               new LeaderAndIsr(newLeader, currentLeaderEpoch + 1, List(newLeader), currentLeaderIsrZkPathVersion + 1)
             }
           } else {
+            // 活着的AR 并且在ISR中
             val liveReplicasInIsr = liveAssignedReplicas.filter(r => liveBrokersInIsr.contains(r))
+            //todo 返回第一个存活的ISR
             val newLeader = liveReplicasInIsr.head
             debug("Some broker in ISR is alive for %s. Select %d from ISR %s to be the leader."
               .format(topicAndPartition, newLeader, liveBrokersInIsr.mkString(",")))
@@ -100,6 +106,7 @@ class OfflinePartitionLeaderSelector(controllerContext: ControllerContext, confi
  * New isr = current isr
  * Replicas to receive LeaderAndIsr request = reassigned replicas
  */
+//重新分配分区时，选举主副本
 class ReassignedPartitionLeaderSelector(controllerContext: ControllerContext) extends PartitionLeaderSelector with Logging {
   this.logIdent = "[ReassignedPartitionLeaderSelector]: "
 
@@ -134,14 +141,17 @@ class ReassignedPartitionLeaderSelector(controllerContext: ControllerContext) ex
  * New isr = current isr;
  * Replicas to receive LeaderAndIsr request = assigned replicas
  */
+//使用最优的副本作为主副本
 class PreferredReplicaPartitionLeaderSelector(controllerContext: ControllerContext) extends PartitionLeaderSelector
 with Logging {
   this.logIdent = "[PreferredReplicaPartitionLeaderSelector]: "
 
   def selectLeader(topicAndPartition: TopicAndPartition, currentLeaderAndIsr: LeaderAndIsr): (LeaderAndIsr, Seq[Int]) = {
     val assignedReplicas = controllerContext.partitionReplicaAssignment(topicAndPartition)
+    //优先的副本
     val preferredReplica = assignedReplicas.head
     // check if preferred replica is the current leader
+    //当前的leader
     val currentLeader = controllerContext.partitionLeadershipInfo(topicAndPartition).leaderAndIsr.leader
     if (currentLeader == preferredReplica) {
       throw new LeaderElectionNotNeededException("Preferred replica %d is already the current leader for partition %s"
@@ -151,6 +161,7 @@ with Logging {
         " Trigerring preferred replica leader election")
       // check if preferred replica is not the current leader and is alive and in the isr
       if (controllerContext.liveBrokerIds.contains(preferredReplica) && currentLeaderAndIsr.isr.contains(preferredReplica)) {
+        //preferredReplica存活 并且 在ISR集合中
         (new LeaderAndIsr(preferredReplica, currentLeaderAndIsr.leaderEpoch + 1, currentLeaderAndIsr.isr,
           currentLeaderAndIsr.zkVersion + 1), assignedReplicas)
       } else {
@@ -166,6 +177,7 @@ with Logging {
  * New isr = current isr - shutdown replica;
  * Replicas to receive LeaderAndIsr request = live assigned replicas
  */
+//代理节点挂掉后，重新选举主副本
 class ControlledShutdownLeaderSelector(controllerContext: ControllerContext)
         extends PartitionLeaderSelector
         with Logging {

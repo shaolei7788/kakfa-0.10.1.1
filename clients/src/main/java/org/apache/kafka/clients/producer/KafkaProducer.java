@@ -366,7 +366,7 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
              *          例如leader已经死亡，producer不知情，还会继续发送消息,broker接收不到数据就会数据丢失
              *  1: producer要等待分区中的leader成功收到数据并得到确认，才发送下一条消息。
              *      提供了较好的持久性较低的延迟性。
-             *     Partition的Leader死亡，follwer尚未复制，数据就会丢失
+             *     Partition的Leader死亡，follower尚未复制，数据就会丢失
              *  -1:producer只有收到分区内所有副本的成功写入的通知才认为推送消息成功了。
              *      持久性最好，延时性最差。
              *

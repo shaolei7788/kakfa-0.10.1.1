@@ -46,9 +46,11 @@ object ZkUtils {
   val BrokerTopicsPath = "/brokers/topics"
   val ControllerPath = "/controller"
   val ControllerEpochPath = "/controller_epoch"
+
   val ReassignPartitionsPath = "/admin/reassign_partitions"
   val DeleteTopicsPath = "/admin/delete_topics"
   val PreferredReplicaLeaderElectionPath = "/admin/preferred_replica_election"
+
   val BrokerSequenceIdPath = "/brokers/seqid"
   val IsrChangeNotificationPath = "/isr_change_notification"
   val EntityConfigPath = "/config"
@@ -104,13 +106,16 @@ object ZkUtils {
   }
 
   def getTopicPartitionsPath(topic: String): String = {
+    //todo  /brokers/topics + /partitions = /brokers/topics/partitions
     getTopicPath(topic) + "/partitions"
   }
 
   def getTopicPartitionPath(topic: String, partitionId: Int): String =
+    //todo  path =  /brokers/topics/partitions + "/" + 0 = /brokers/topics/partitions/0
     getTopicPartitionsPath(topic) + "/" + partitionId
 
   def getTopicPartitionLeaderAndIsrPath(topic: String, partitionId: Int): String =
+    //todo path = /brokers/topics/partitions/0/state
     getTopicPartitionPath(topic, partitionId) + "/" + "state"
 
   def getEntityConfigRootPath(entityType: String): String =
@@ -404,6 +409,7 @@ class ZkUtils(val zkClient: ZkClient,
 
 
   def leaderAndIsrZkData(leaderAndIsr: LeaderAndIsr, controllerEpoch: Int): String = {
+    //{"controller_epoch":6,"leader":1,"version":1,"leader_epoch":0,"isr":[1,0]}
     Json.encode(Map("version" -> 1, "leader" -> leaderAndIsr.leader, "leader_epoch" -> leaderAndIsr.leaderEpoch,
                     "controller_epoch" -> controllerEpoch, "isr" -> leaderAndIsr.isr))
   }

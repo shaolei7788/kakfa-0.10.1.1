@@ -19,8 +19,10 @@ package kafka.controller
 import collection._
 import collection.JavaConversions._
 import java.util.concurrent.atomic.AtomicBoolean
-import kafka.common.{TopicAndPartition, StateChangeFailedException}
-import kafka.utils.{ZkUtils, ReplicationUtils, Logging}
+
+import kafka.cluster.Broker
+import kafka.common.{StateChangeFailedException, TopicAndPartition}
+import kafka.utils.{Logging, ReplicationUtils, ZkUtils}
 import org.I0Itec.zkclient.IZkChildListener
 import org.apache.log4j.Logger
 import kafka.controller.Callbacks._
@@ -44,6 +46,14 @@ import kafka.utils.CoreUtils._
  * 7. NonExistentReplica: If a replica is deleted successfully, it is moved to this state. Valid previous state is
  *                        ReplicaDeletionSuccessful
  */
+/**
+ * 1. NewReplica: 新创建主题，重新分配分区(增加分区)时创建新副本，副本状态为 新建，该状态下副本只能收到 成为follower副本请求
+ * 2. OnlineReplica: 当副本启动，并且是分区副本集的一部分，副本状态为在线，该状态可用收到成为leader副本或成为follower副本请求
+ * 3. OfflineReplica: broker宕机后，节点上的所有副本状态为下线
+ * 4. NonExistentReplica: 副本被成功删除后，状态为不存在
+ */
+//todo 用于管理集器中所有replica状态的状态机 保存了所有的副本以及对应的副本状态
+// 正常流程是 不存在状态 > 新建状态 > 上线状态 > 下线状态
 class ReplicaStateMachine(controller: KafkaController) extends Logging {
   private val controllerContext = controller.controllerContext
   private val controllerId = controller.config.brokerId
@@ -105,6 +115,7 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
    * @param targetState  The state that the replicas should be moved to
    * The controller's allLeaders cache should have been updated before this
    */
+  //todo 对多个副本的状态改变，以批量请求的方式发送给多个代理节点
   def handleStateChanges(replicas: Set[PartitionAndReplica], targetState: ReplicaState,
                          callbacks: Callbacks = (new CallbackBuilder).build) {
     if(replicas.nonEmpty) {
@@ -154,6 +165,7 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
    * @param partitionAndReplica The replica for which the state transition is invoked
    * @param targetState The end state that the replica should be moved to
    */
+  //todo 对单个副本的状态改变
   def handleStateChange(partitionAndReplica: PartitionAndReplica, targetState: ReplicaState,
                         callbacks: Callbacks) {
     val topic = partitionAndReplica.topic
@@ -173,6 +185,7 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
           // start replica as a follower to the current leader for its partition
           val leaderIsrAndControllerEpochOpt = ReplicationUtils.getLeaderIsrAndEpochForPartition(zkUtils, topic, partition)
           leaderIsrAndControllerEpochOpt match {
+            //存在主副本  而且副本的编号不是当前新建副本的编号，说明当前新建的副本会作为分区的follower副本
             case Some(leaderIsrAndControllerEpoch) =>
               if(leaderIsrAndControllerEpoch.leaderAndIsr.leader == replicaId)
                 throw new StateChangeFailedException("Replica %d for partition %s cannot be moved to NewReplica"
@@ -313,6 +326,7 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
   }
 
   private def registerBrokerChangeListener() = {
+    // broker改变监听 里面会有分区leader选举  path = /brokers/ids
     zkUtils.zkClient.subscribeChildChanges(ZkUtils.BrokerIdsPath, brokerChangeListener)
   }
 
@@ -345,9 +359,7 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
     controllerContext.partitionReplicaAssignment.filter(_._2.contains(brokerId)).keySet.toSeq
   }
 
-  /**
-   * This is the zookeeper listener that triggers all the state transitions for a replica
-   */
+  //todo BrokerChangeListener 监听器会读取 /brokers/ids/ 最新的代理节点列表
   class BrokerChangeListener() extends IZkChildListener with Logging {
     this.logIdent = "[BrokerChangeListener on Controller " + controller.config.brokerId + "]: "
     def handleChildChange(parentPath : String, currentBrokerList : java.util.List[String]) {
@@ -356,11 +368,14 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
         if (hasStarted.get) {
           ControllerStats.leaderElectionTimer.time {
             try {
-              val curBrokers = currentBrokerList.map(_.toInt).toSet.flatMap(zkUtils.getBrokerInfo)
+              val curBrokers  = currentBrokerList.map(_.toInt).toSet.flatMap(zkUtils.getBrokerInfo)
               val curBrokerIds = curBrokers.map(_.id)
               val liveOrShuttingDownBrokerIds = controllerContext.liveOrShuttingDownBrokerIds
+              //新加的broker id
               val newBrokerIds = curBrokerIds -- liveOrShuttingDownBrokerIds
+              //挂了的broker id
               val deadBrokerIds = liveOrShuttingDownBrokerIds -- curBrokerIds
+
               val newBrokers = curBrokers.filter(broker => newBrokerIds(broker.id))
               controllerContext.liveBrokers = curBrokers
               val newBrokerIdsSorted = newBrokerIds.toSeq.sorted
@@ -371,8 +386,10 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
               //todo 添加broker
               newBrokers.foreach(controllerContext.controllerChannelManager.addBroker)
               deadBrokerIds.foreach(controllerContext.controllerChannelManager.removeBroker)
-              if(newBrokerIds.nonEmpty)
+              if(newBrokerIds.nonEmpty) {
+                //todo broker上线
                 controller.onBrokerStartup(newBrokerIdsSorted)
+              }
               if(deadBrokerIds.nonEmpty)
                 controller.onBrokerFailure(deadBrokerIdsSorted)
             } catch {
