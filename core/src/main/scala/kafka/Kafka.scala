@@ -74,4 +74,5 @@ object Kafka extends Logging {
     }
     System.exit(0)
   }
+
 }
