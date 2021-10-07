@@ -149,7 +149,6 @@ class OffsetIndex(file: File, baseOffset: Long, maxIndexSize: Int = -1)
     inLock(lock) {
       val idx = mmap.duplicate
       val slot = indexSlotFor(idx, offset, IndexSearchType.KEY)
-
       /* There are 3 cases for choosing the new size
        * 1) if there is no entry in the index <= the offset, delete everything
        * 2) if there is an entry for this exact offset, delete it and everything larger than it
