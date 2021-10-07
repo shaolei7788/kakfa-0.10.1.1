@@ -41,6 +41,12 @@ import java.io.{IOException, File}
  * @param indexIntervalBytes The approximate number of bytes between entries in the index
  * @param time The time instance
  */
+ // 日志分段，同一个目录下所有的日志分段都属于同一个分区
+ // 每个LogSegment 分 log 跟 index
+ // log 日志文件存储的是真正的消息内容
+ // index 索引文件 存储的是数据文件的索引信息 其目的是为了快速访问数据文件
+ //  Log.sizeInBytes = 日志文件的大小
+ //  ByteBufferMessageSet.sizeInBytes = 该批消息的大小
 @nonthreadsafe
 class LogSegment(val log: FileMessageSet,
                  val index: OffsetIndex,
@@ -71,7 +77,7 @@ class LogSegment(val log: FileMessageSet,
          rollJitterMs,
          time)
 
-  /* Return the size in bytes of this log segment */
+  //日志文件的大小 Log.sizeInBytes
   def size: Long = log.sizeInBytes()
 
   /**
@@ -87,6 +93,7 @@ class LogSegment(val log: FileMessageSet,
    */
   @nonthreadsafe
   def append(firstOffset: Long, largestTimestamp: Long, offsetOfLargestTimestamp: Long, messages: ByteBufferMessageSet) {
+    //messages.sizeInBytes 消息的大小
     if (messages.sizeInBytes > 0) {
       trace("Inserting %d bytes at offset %d at position %d with largest timestamp %d at offset %d"
           .format(messages.sizeInBytes, firstOffset, log.sizeInBytes(), largestTimestamp, offsetOfLargestTimestamp))

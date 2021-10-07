@@ -47,18 +47,20 @@ abstract class AbstractIndex[K, V](@volatile private[this] var _file: File, val 
   @volatile
   protected var mmap: MappedByteBuffer = {
     val newlyCreated = _file.createNewFile()
+    //也是顺序写磁盘
     val raf = new RandomAccessFile(_file, "rw")
     try {
       /* pre-allocate the file if necessary */
       if(newlyCreated) {
         if(maxIndexSize < entrySize)
           throw new IllegalArgumentException("Invalid max index size: " + maxIndexSize)
+        //设置文件的长度 OffsetIndex文件 maxIndexSize 默认10m
         raf.setLength(roundDownToExactMultiple(maxIndexSize, entrySize))
       }
 
       /* memory-map the file */
       val len = raf.length()
-      val idx = raf.getChannel.map(FileChannel.MapMode.READ_WRITE, 0, len)
+      val idx : MappedByteBuffer = raf.getChannel.map(FileChannel.MapMode.READ_WRITE, 0, len)
 
       /* set the position in the index for the next entry */
       if(newlyCreated)

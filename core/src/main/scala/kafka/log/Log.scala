@@ -108,8 +108,9 @@ class Log(val dir: File,//Log对应的磁盘文件
   }
   val t = time.milliseconds
   /* the actual segments of the log */
-  //管理LogSegement集合的跳表
+  //管理LogSegement集合的跳表 key= 分段的基础偏移量 value= LogSegment 对象
   private val segments: ConcurrentNavigableMap[java.lang.Long, LogSegment] = new ConcurrentSkipListMap[java.lang.Long, LogSegment]
+  //todo 加载所有的日志分段 通常发生在broker节点重启时
   loadSegments()
 
   /* Calculate the offset of the next message */
@@ -164,7 +165,7 @@ class Log(val dir: File,//Log对应的磁盘文件
         throw new IOException("Could not read file " + file)
       val filename = file.getName
       if(filename.endsWith(DeletedFileSuffix) || filename.endsWith(CleanedFileSuffix)) {
-        // if the file ends in .deleted or .cleaned, delete it
+        // 如果文件以.deleted 或 .cleaned 结尾 直接删除
         file.delete()
       } else if(filename.endsWith(SwapFileSuffix)) {
         // we crashed in the middle of a swap operation, to recover:
@@ -345,7 +346,7 @@ class Log(val dir: File,//Log对应的磁盘文件
    */
   //todo 会将生产者发送过来请求解析成ByteBufferMessageSet  assignOffsets 是否需要给消息添加offset
   def append(messages: ByteBufferMessageSet, assignOffsets: Boolean = true): LogAppendInfo = {
-    //todo 进行数据校验
+    //todo 进行数据校验 LogAppendInfo 日志追加信息 代表这批消息的概要信息 但不包含消息内容
     val appendInfo: LogAppendInfo = analyzeAndValidateMessageSet(messages)
 
     // if we have any valid messages, append them to the log
@@ -355,21 +356,22 @@ class Log(val dir: File,//Log对应的磁盘文件
 
     // trim any invalid bytes or partial messages before appending it to the on-disk log
     //todo 清除未通过验证的message
-    var validMessages = trimInvalidBytes(messages, appendInfo)
+    var validMessages: ByteBufferMessageSet = trimInvalidBytes(messages, appendInfo)
 
     try {
       // they are valid, insert them in the log
       lock synchronized {
         //todo assignOffsets 是否需要给消息添加offset
         if (assignOffsets) {
-          // assign offsets to the message set
-          //获取messageOffset 从此值开始向后分配offset 获取LEO
+          //todo nextOffsetMetadata.messageOffset 作为下一个消息的绝对偏移量
           val offset = new LongRef(nextOffsetMetadata.messageOffset)
           //使用appendInfo.firstOffset 记录第一条消息的offset,不受压缩影响
+          //todo 获取下一个消息的绝对偏移量(不是消息自带的相对偏移量)作为第一条消息的绝对偏移量  从此值开始向后分配offset
           appendInfo.firstOffset = offset.value
           val now = time.milliseconds
           val validateAndOffsetAssignResult = try {
-            //进行内部压缩消息做进一步验证，消息格式转换 并为message分配偏移量
+            //todo 进行内部压缩消息做进一步验证，消息格式转换 并为message分配偏移量
+            // offset的返回值是最后一条消息的偏移量再加1
             validMessages.validateMessagesAndAssignOffsets(offset,
                                                            now,
                                                            appendInfo.sourceCodec,
@@ -464,6 +466,7 @@ class Log(val dir: File,//Log对应的磁盘文件
    * <li> Whether any compression codec is used (if many are used, then the last one is given)
    * </ol>
    */
+
   private def analyzeAndValidateMessageSet(messages: ByteBufferMessageSet): LogAppendInfo = {
     //记录外层消息的数量
     var shallowMessageCount = 0
@@ -472,22 +475,26 @@ class Log(val dir: File,//Log对应的磁盘文件
     //记录第一条消息 最后一条消息
     var firstOffset, lastOffset = -1L
     var sourceCodec: CompressionCodec = NoCompressionCodec
-    var monotonic = true
+    var monotonic = true //单调递增
     var maxTimestamp = Message.NoTimestamp
     var offsetOfMaxTimestamp = -1L
+    //shallowIterator 浅层迭代器 即未使用压缩 获取每条消息的内容即对应的偏移量
+    //deepIterator    深层迭代器 即使用了压缩
     for(messageAndOffset <- messages.shallowIterator) {
       // update the first offset if on the first message
       if(firstOffset < 0)
+        // messageAndOffset.offset 相对偏移量 消息集中的偏移量都是从0开始
         firstOffset = messageAndOffset.offset
       // check that offsets are monotonically increasing
-      if(lastOffset >= messageAndOffset.offset)
+      //主要是判断偏移量是否单调递增
+      if(lastOffset >= messageAndOffset.offset) {
         monotonic = false
-      // update the last offset seen
+      }
+      // 每循环一条消息就更新lastOffset
       lastOffset = messageAndOffset.offset
-
-      val m = messageAndOffset.message
-
+      val m : Message = messageAndOffset.message
       // Check if the message sizes are valid.
+      //消息的大小
       val messageSize = MessageSet.entrySize(m)
       if(messageSize > config.maxMessageSize) {
         BrokerTopicStats.getBrokerTopicStats(topicAndPartition.topic).bytesRejectedRate.mark(messages.sizeInBytes)
@@ -496,7 +503,7 @@ class Log(val dir: File,//Log对应的磁盘文件
           .format(messageSize, config.maxMessageSize))
       }
 
-      // check the validity of the message by checking CRC
+      // 校验消息大小
       m.ensureValid()
       if (m.timestamp > maxTimestamp) {
         maxTimestamp = m.timestamp
@@ -752,6 +759,7 @@ class Log(val dir: File,//Log对应的磁盘文件
   /**
    *  The offset of the next message that will be appended to the log
    */
+  //下一条消息的偏移量
   def logEndOffset: Long = nextOffsetMetadata.messageOffset
 
   /**
@@ -807,7 +815,7 @@ class Log(val dir: File,//Log对应的磁盘文件
       val logFile = logFilename(dir, newOffset)
       //基于LEO生成新索引文件名 LEO.index
       val indexFile = indexFilename(dir, newOffset)
-      //基于LEO生成时间索引文件名 LEO.x
+      //基于LEO生成时间索引文件名 LEO.timeindex
       val timeIndexFile = timeIndexFilename(dir, newOffset)
       for(file <- List(logFile, indexFile, timeIndexFile); if file.exists) {
         warn("Newly rolled segment file " + file.getName + " already exists; deleting it first")
@@ -819,7 +827,7 @@ class Log(val dir: File,//Log对应的磁盘文件
       segments.lastEntry() match {
         case null =>
         case entry => {
-          val seg = entry.getValue
+          val seg: LogSegment = entry.getValue
           seg.onBecomeInactiveSegment()
           //todo 对日志文件索引文件进行截断，保证文件中只保存了有效字节，这对预分区的文件尤其重要
           seg.index.trimToValidSize()
@@ -959,7 +967,8 @@ class Log(val dir: File,//Log对应的磁盘文件
   /**
    * The active segment that is currently taking appends
    */
-  def activeSegment = segments.lastEntry.getValue
+  //最新获得的 Segment
+  def activeSegment : LogSegment = segments.lastEntry.getValue
 
   /**
    * All the log segments in this log ordered from oldest to newest

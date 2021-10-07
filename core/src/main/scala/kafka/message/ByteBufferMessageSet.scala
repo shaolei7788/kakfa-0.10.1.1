@@ -298,10 +298,13 @@ class ByteBufferMessageSet(val buffer: ByteBuffer) extends MessageSet with Loggi
 
   /** Write the messages in this set to the given channel */
   def writeFullyTo(channel: GatheringByteChannel): Int = {
+    // FileChannel implements GatheringByteChannel
     buffer.mark()
     var written = 0
-    while (written < sizeInBytes)
+    while (written < sizeInBytes) {
+      //将底层包含的消息内容的字节缓冲区写到文件通道
       written += channel.write(buffer)
+    }
     buffer.reset()
     written
   }
@@ -333,6 +336,7 @@ class ByteBufferMessageSet(val buffer: ByteBuffer) extends MessageSet with Loggi
   override def iterator: Iterator[MessageAndOffset] = internalIterator()
 
   /** iterator over compressed messages without decompressing */
+  //迭代压缩消息 没有解压
   def shallowIterator: Iterator[MessageAndOffset] = internalIterator(isShallow = true)
 
   /** When flag isShallow is set to be true, we do a shallow iteration: just traverse the first level of messages. **/
@@ -417,14 +421,15 @@ class ByteBufferMessageSet(val buffer: ByteBuffer) extends MessageSet with Loggi
                                                       messageTimestampType: TimestampType,
                                                       messageTimestampDiffMaxMs: Long): ValidationAndOffsetAssignResult = {
     if (sourceCodec == NoCompressionCodec && targetCodec == NoCompressionCodec) {
+      //未使用压缩
       // check the magic value
       if (!isMagicValueInAllWrapperMessages(messageFormatVersion))
-        convertNonCompressedMessages(offsetCounter, compactedTopic, now, messageTimestampType, messageTimestampDiffMaxMs,
-          messageFormatVersion)
-      else
-        // Do in-place validation, offset assignment and maybe set timestamp
+        convertNonCompressedMessages(offsetCounter, compactedTopic, now, messageTimestampType, messageTimestampDiffMaxMs, messageFormatVersion)
+      else {
+        // todo
         validateNonCompressedMessagesAndAssignOffsetInPlace(offsetCounter, now, compactedTopic, messageTimestampType,
           messageTimestampDiffMaxMs)
+      }
     } else {
       // Deal with compressed messages
       // We cannot do in place assignment in one of the following situations:
@@ -567,19 +572,27 @@ class ByteBufferMessageSet(val buffer: ByteBuffer) extends MessageSet with Loggi
                                         messageSizeMaybeChanged = true)
   }
 
+  //更新每条消息的偏移量数据
   private def validateNonCompressedMessagesAndAssignOffsetInPlace(offsetCounter: LongRef,
                                                                   now: Long,
                                                                   compactedTopic: Boolean,
                                                                   timestampType: TimestampType,
                                                                   timestampDiffMaxMs: Long): ValidationAndOffsetAssignResult = {
-    // do in-place validation and offset assignment
+    // 偏移量  消息长度(字节)  消息内容(不固定) 消息占用大小  起始位置
+    // 0        3             abc          8+4+3 =15   0
+    // 1        5             bcdef        8+4+5 =17   15
+    // 0        3             cdef         8+4+4 =16   15+17=32
     var messagePosition = 0
     var maxTimestamp = Message.NoTimestamp
     var offsetOfMaxTimestamp = -1L
     buffer.mark()
     while (messagePosition < sizeInBytes - MessageSet.LogOverhead) {
+      //定位每条消息的起始位置 刚进来就是0的位置
       buffer.position(messagePosition)
+      //todo 修改偏移量 以最新的偏移量计数器为基础，每条消息都的偏移量都在此基数上加1
+      // 写入每条消息的绝对偏移量后，只会读取消息的大小
       buffer.putLong(offsetCounter.getAndIncrement())
+      //消息的大小
       val messageSize = buffer.getInt()
       val messageBuffer = buffer.slice()
       messageBuffer.limit(messageSize)
@@ -597,9 +610,10 @@ class ByteBufferMessageSet(val buffer: ByteBuffer) extends MessageSet with Loggi
           offsetOfMaxTimestamp = offsetCounter.value - 1
         }
       }
-
+      //消息的起始位置    12 + 消息大小 表示一条完整的消息
       messagePosition += MessageSet.LogOverhead + messageSize
     }
+    //回到最开始标记的地方
     buffer.reset()
     ValidationAndOffsetAssignResult(validatedMessages = this,
                                     maxTimestamp = maxTimestamp,
@@ -631,6 +645,7 @@ class ByteBufferMessageSet(val buffer: ByteBuffer) extends MessageSet with Loggi
   /**
    * The total number of bytes in this message set, including any partial trailing messages
    */
+  //字节缓冲区的大小
   def sizeInBytes: Int = buffer.limit
 
   /**

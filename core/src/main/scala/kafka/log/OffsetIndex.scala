@@ -48,6 +48,9 @@ import kafka.common.InvalidOffsetException
  * All external APIs translate from relative offsets to full offsets, so users of this class do not interact with the internal 
  * storage format.
  */
+//快递定位指定偏移量在数据文件中的物理位置
+//稀疏索引可以通过内存映射的方式，将整个索引文件都放入内存，加快偏移量的查询
+// baseOffset 基础偏移量   maxIndexSize 默认10m
 class OffsetIndex(file: File, baseOffset: Long, maxIndexSize: Int = -1)
     extends AbstractIndex[Long, Int](file, baseOffset, maxIndexSize) {
 
@@ -118,16 +121,18 @@ class OffsetIndex(file: File, baseOffset: Long, maxIndexSize: Int = -1)
   /**
    * Append an entry for the given offset/location pair to the index. This entry must have a larger offset than all subsequent entries.
    */
+  // offset 添加消息的绝对偏移量
+  // position 添加消息在数据文件的物理位置
   def append(offset: Long, position: Int) {
     inLock(lock) {
       require(!isFull, "Attempt to append to a full index (size = " + _entries + ").")
       if (_entries == 0 || offset > _lastOffset) {
         debug("Adding index entry %d => %d to %s.".format(offset, position, file.getName))
-        //offset - baseOffset 相对偏移量
+        //todo offset - baseOffset 相对偏移量
         mmap.putInt((offset - baseOffset).toInt)
-        //position 是物理地址
+        //todo position 是物理地址
         mmap.putInt(position)
-        //写索引的时候会记录两个位置信息，一个是offset 偏移量,一个pistion 物理地址
+        //写索引的时候会记录两个位置信息，一个是offset 相对偏移量,一个pistion 物理地址
         _entries += 1
         _lastOffset = offset
         require(_entries * entrySize == mmap.position, entries + " entries but file position in index is " + mmap.position + ".")

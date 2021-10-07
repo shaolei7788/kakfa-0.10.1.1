@@ -42,6 +42,7 @@ import scala.collection.mutable.ArrayBuffer
  * @param end The upper bound on the absolute position in the file at which the message set ends
  * @param isSlice Should the start and end parameters be used for slicing?
  */
+//对应磁盘上一个真正的日志文件
 @nonthreadsafe
 class FileMessageSet private[kafka](@volatile var file: File,//指向磁盘上对应的日志文件
                                     private[log] val channel: FileChannel,//用于读写对应的日志文件
@@ -316,6 +317,7 @@ class FileMessageSet private[kafka](@volatile var file: File,//指向磁盘上�
    * If we encounter a message larger than this we throw an InvalidMessageException.
    * @return The iterator.
    */
+  //提供迭代器，顺序读取MessageSet中的消息
   def iterator(maxMessageSize: Int): Iterator[MessageAndOffset] = {
     new IteratorTemplate[MessageAndOffset] {
       var location = start
