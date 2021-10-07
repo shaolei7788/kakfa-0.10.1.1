@@ -492,7 +492,9 @@ class ReplicaManager(val config: KafkaConfig,
                     quota: ReplicaQuota = UnboundedQuota,
                     responseCallback: Seq[(TopicAndPartition, FetchResponsePartitionData)] => Unit) {
     val isFromFollower = replicaId >= 0
+    //debug模式为false 其它都为true
     val fetchOnlyFromLeader: Boolean = replicaId != Request.DebuggingConsumerId
+    // 消费者 replicaId = -1
     val fetchOnlyCommitted: Boolean = ! Request.isValidBrokerId(replicaId)
 
     //todo 读取本地日志
@@ -507,8 +509,10 @@ class ReplicaManager(val config: KafkaConfig,
 
     // if the fetch comes from the follower,
     // update its corresponding log end offset
-    if(Request.isValidBrokerId(replicaId))
+    if(Request.isValidBrokerId(replicaId)) {
+      //todo 更新follower日志读取的结果
       updateFollowerLogReadResults(replicaId, logReadResults)
+    }
 
     // check if this fetch request can be satisfied right away
     val logReadResultValues = logReadResults.map { case (_, v) => v }
@@ -551,9 +555,9 @@ class ReplicaManager(val config: KafkaConfig,
    * Read from multiple topic partitions at the given offset up to maxSize bytes
    */
   def readFromLocalLog(replicaId: Int,
-                       fetchOnlyFromLeader: Boolean,
-                       readOnlyCommitted: Boolean,
-                       fetchMaxBytes: Int,
+                       fetchOnlyFromLeader: Boolean,//是否只读取leader副本消息
+                       readOnlyCommitted: Boolean,//是否只读取HW之前的消息 如果来自消费者为true,follower为false
+                       fetchMaxBytes: Int,//
                        hardMaxBytesLimit: Boolean,
                        readPartitionInfo: Seq[(TopicAndPartition, PartitionFetchInfo)],
                        quota: ReplicaQuota): Seq[(TopicAndPartition, LogReadResult)] = {
@@ -571,13 +575,13 @@ class ReplicaManager(val config: KafkaConfig,
           s"remaining response limit ${limitBytes}" +
           (if (minOneMessage) s", ignoring response/partition size limits" else ""))
 
-        // decide whether to only fetch from leader
+        // 判断是否只拉取leader副本
         val localReplica = if (fetchOnlyFromLeader)
           getLeaderReplicaIfLocal(topic, partition)
         else
           getReplicaOrException(topic, partition)
 
-        // decide whether to only fetch committed data (i.e. messages below high watermark)
+        // 确定读取消息的上线，根据readOnlyCommitted来判断是否为HW
         val maxOffsetOpt = if (readOnlyCommitted)
           Some(localReplica.highWatermark.messageOffset)
         else
@@ -590,7 +594,7 @@ class ReplicaManager(val config: KafkaConfig,
          * This can cause a replica to always be out of sync.
          */
         val initialLogEndOffset = localReplica.logEndOffset
-        val logReadInfo = localReplica.log match {
+        val logReadInfo : FetchDataInfo = localReplica.log match {
           case Some(log) =>
             val adjustedFetchSize = math.min(fetchSize, limitBytes)
 
@@ -598,7 +602,7 @@ class ReplicaManager(val config: KafkaConfig,
             //todo Log#read
             val fetch = log.read(offset, adjustedFetchSize, maxOffsetOpt, minOneMessage)
 
-            // If the partition is being throttled, simply return an empty set.
+            // If the partition is being throttled, simply return an empty set.  Throttle 掐死 勒死
             if (shouldLeaderThrottle(quota, tp, replicaId))
               FetchDataInfo(fetch.fetchOffsetMetadata, MessageSet.Empty)
             // For FetchRequest version 3, we replace incomplete message sets with an empty one as consumers can make
@@ -608,10 +612,11 @@ class ReplicaManager(val config: KafkaConfig,
             else fetch
 
           case None =>
+            //异常处理
             error(s"Leader for partition $tp does not have a local log")
             FetchDataInfo(LogOffsetMetadata.UnknownOffsetMetadata, MessageSet.Empty)
         }
-
+        //是否读取到log的最后一条消息
         val readToEndOfLog = initialLogEndOffset.messageOffset - logReadInfo.fetchOffsetMetadata.messageOffset <= 0
 
         LogReadResult(logReadInfo, localReplica.highWatermark.messageOffset, fetchSize, readToEndOfLog, None)
@@ -634,9 +639,10 @@ class ReplicaManager(val config: KafkaConfig,
     var limitBytes = fetchMaxBytes
     val result = new mutable.ArrayBuffer[(TopicAndPartition, LogReadResult)]
     var minOneMessage = !hardMaxBytesLimit
+    //要读取的分区信息
     readPartitionInfo.foreach { case (tp, fetchInfo) =>
       //todo 读取数据
-      val readResult = read(tp, fetchInfo, limitBytes, minOneMessage)
+      val readResult : LogReadResult = read(tp, fetchInfo, limitBytes, minOneMessage)
       val messageSetSize = readResult.info.messageSet.sizeInBytes
       // Once we read from a non-empty partition, we stop ignoring request and partition level size limits
       if (messageSetSize > 0)
@@ -740,12 +746,12 @@ class ReplicaManager(val config: KafkaConfig,
         val partitionsToBeFollower = partitionState -- partitionsTobeLeader.keys
 
         val partitionsBecomeLeader = if (partitionsTobeLeader.nonEmpty) {
-          //为这些分区创建主副本
+          //todo 将指定分区的local replica 切换为leader
           makeLeaders(controllerId, controllerEpoch, partitionsTobeLeader, correlationId, responseMap)
         } else
           Set.empty[Partition]
         val partitionsBecomeFollower = if (partitionsToBeFollower.nonEmpty){
-          //为这些分区创建follower副本
+          //todo 将指定分区的local replica 切换为follower
           makeFollowers(controllerId, controllerEpoch, partitionsToBeFollower, correlationId, responseMap, metadataCache)
         }
         else
@@ -801,10 +807,10 @@ class ReplicaManager(val config: KafkaConfig,
       // Update the partition information to be the leader
       partitionState.foreach{ case (partition, partitionStateInfo) =>
         //todo 将分区的local replica 切换为leader副本
-        if (partition.makeLeader(controllerId, partitionStateInfo, correlationId))
+        if (partition.makeLeader(controllerId, partitionStateInfo, correlationId)) {
           //记录成功从其它状态切换成leader副本的分区
           partitionsToMakeLeaders += partition
-        else
+        } else
           stateChangeLogger.info(("Broker %d skipped the become-leader state change after marking its partition as leader with correlation id %d from " +
             "controller %d epoch %d for partition %s since it is already the leader for the partition.")
             .format(localBrokerId, correlationId, controllerId, epoch, TopicAndPartition(partition.topic, partition.partitionId)));
@@ -878,6 +884,7 @@ class ReplicaManager(val config: KafkaConfig,
         metadataCache.getAliveBrokers.find(_.id == newLeaderBrokerId) match {
           // Only change partition state when the leader is available
           case Some(leaderBroker) =>
+            //todo 切换成follower
             if (partition.makeFollower(controllerId, partitionStateInfo, correlationId))
               partitionsToMakeFollower += partition
             else
@@ -963,13 +970,18 @@ class ReplicaManager(val config: KafkaConfig,
     allPartitions.values.foreach(partition => partition.maybeShrinkIsr(config.replicaLagTimeMaxMs))
   }
 
+  //todo
+  // 1 更新leader副本上维护的follower副本的各项状态，如 LEO,lastCaughtUpTimeMsUnderlying
+  // 2 随着follower副本不断fetch消息，最终追上leader副本，可能对ISR集合进行扩张
+  // 3 检测是否需要后移leader 的HW
+  // 4 检测DelayedProducePurgatoryz中相关key对应的delayedProduce,满足条件将其完成
   private def updateFollowerLogReadResults(replicaId: Int, readResults: Seq[(TopicAndPartition, LogReadResult)]) {
     debug("Recording follower broker %d log read results: %s ".format(replicaId, readResults))
     readResults.foreach { case (topicAndPartition, readResult) =>
       getPartition(topicAndPartition.topic, topicAndPartition.partition) match {
         case Some(partition) =>
+          //todo
           partition.updateReplicaLogReadResult(replicaId, readResult)
-
           // for producer requests with ack > 1, we need to check
           // if they can be unblocked after some follower's log end offsets have moved
           tryCompleteDelayedProduce(new TopicPartitionOperationKey(topicAndPartition))

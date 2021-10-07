@@ -65,7 +65,7 @@ trait Scheduler {
  * @param daemon If true the scheduler threads will be "daemon" threads and will not block jvm shutdown.
  */
 @threadsafe
-class KafkaScheduler(val threads: Int, 
+class KafkaScheduler(val threads: Int, //默认1
                      val threadNamePrefix: String = "kafka-scheduler-", 
                      daemon: Boolean = true) extends Scheduler with Logging {
   private var executor: ScheduledThreadPoolExecutor = null

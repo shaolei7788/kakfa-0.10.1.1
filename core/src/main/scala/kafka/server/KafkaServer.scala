@@ -189,10 +189,10 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
       if (canStartup) {
         metrics = new Metrics(metricConfig, reporters, kafkaMetricsTime, true)
         quotaManagers = QuotaFactory.instantiate(config, metrics, time)
-
+        //设置broker的状态为 Starting
         brokerState.newState(Starting)
 
-        /* start scheduler */
+        //
         kafkaScheduler.startup()
 
         //初始化zk

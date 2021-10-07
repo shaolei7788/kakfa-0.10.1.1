@@ -123,11 +123,11 @@ object AdminUtils extends Logging with AdminUtilities {
     if (replicationFactor > brokerMetadatas.size)
       throw new InvalidReplicationFactorException(s"replication factor: $replicationFactor larger than available brokers: ${brokerMetadatas.size}")
     if (brokerMetadatas.forall(_.rack.isEmpty)) {
-      //_.rack 为空
+      //todo _.rack 为空 不需要机架感知 一般走这里
       assignReplicasToBrokersRackUnaware(nPartitions, replicationFactor, brokerMetadatas.map(_.id),
         fixedStartIndex, startPartitionId)
     } else {
-      //todo _.rack 不为空
+      //todo _.rack 不为空 需要机架感知
       if (brokerMetadatas.exists(_.rack.isEmpty))
         throw new AdminOperationException("Not all brokers have rack information for replica rack aware assignment")
       //分配副本到broker
@@ -139,19 +139,32 @@ object AdminUtils extends Logging with AdminUtilities {
   private def assignReplicasToBrokersRackUnaware(nPartitions: Int,
                                                  replicationFactor: Int,
                                                  brokerList: Seq[Int],
-                                                 fixedStartIndex: Int,
+                                                 fixedStartIndex: Int,//默认-1
+                                                 //默认-1
                                                  startPartitionId: Int): Map[Int, Seq[Int]] = {
+    //副本分配结果
     val ret = mutable.Map[Int, Seq[Int]]()
     val brokerArray = brokerList.toArray
-    val startIndex = if (fixedStartIndex >= 0) fixedStartIndex else rand.nextInt(brokerArray.length)
+    val startIndex = if (fixedStartIndex >= 0) {
+      //指定index
+      fixedStartIndex
+    } else {
+      //随机
+      rand.nextInt(brokerArray.length)
+    }
+    // 0
     var currentPartitionId = math.max(0, startPartitionId)
+    //副本间隔，目的的为了均匀将副本分配到不同的broker上
     var nextReplicaShift = if (fixedStartIndex >= 0) fixedStartIndex else rand.nextInt(brokerArray.length)
     for (_ <- 0 until nPartitions) {
       if (currentPartitionId > 0 && (currentPartitionId % brokerArray.length == 0))
         nextReplicaShift += 1
+      //先分配优先副本
       val firstReplicaIndex = (currentPartitionId + startIndex) % brokerArray.length
+      //记录优先分配的结果
       val replicaBuffer = mutable.ArrayBuffer(brokerArray(firstReplicaIndex))
       for (j <- 0 until replicationFactor - 1)
+        //todo 分配其它副本通过 replicaIndex 实现
         replicaBuffer += brokerArray(replicaIndex(firstReplicaIndex, nextReplicaShift, j, brokerArray.length))
       ret.put(currentPartitionId, replicaBuffer)
       currentPartitionId += 1
@@ -413,8 +426,11 @@ object AdminUtils extends Logging with AdminUtilities {
                   replicationFactor: Int,
                   topicConfig: Properties = new Properties,
                   rackAwareMode: RackAwareMode = RackAwareMode.Enforced) {
+    //从zk获取broker信息，并封装成BrokerMetadata 包含brokerid和rack 信息
     val brokerMetadatas = getBrokerMetadatas(zkUtils, rackAwareMode)
+    // 进行分区分配
     val replicaAssignment = AdminUtils.assignReplicasToBrokers(brokerMetadatas, partitions, replicationFactor)
+    //todo 将分配结果写入zk
     AdminUtils.createOrUpdateTopicPartitionAssignmentPathInZK(zkUtils, topic, replicaAssignment, topicConfig)
   }
 

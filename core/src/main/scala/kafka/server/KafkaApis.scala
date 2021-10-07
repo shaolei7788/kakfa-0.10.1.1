@@ -77,7 +77,7 @@ class KafkaApis(val requestChannel: RequestChannel,
       ApiKeys.forId(request.requestId) match {
         //todo 生产者生产消息
         case ApiKeys.PRODUCE => handleProducerRequest(request)
-        //todo 消费者拉取数据 FETCH
+        //todo 消费者拉取数据 或者follower副本拉取数据 FETCH
         case ApiKeys.FETCH => handleFetchRequest(request)
         //todo 消费者列举偏移量 从分区主副本拉取
         case ApiKeys.LIST_OFFSETS => handleOffsetRequest(request)
@@ -156,6 +156,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         }
       }
 
+      //创建correlationId对应的响应头
       val responseHeader = new ResponseHeader(correlationId)
       val leaderAndIsrResponse =
         if (authorize(request.session, ClusterAction, Resource.ClusterResource)) {
@@ -522,6 +523,7 @@ class KafkaApis(val requestChannel: RequestChannel,
           }
         } else responsePartitionData
 
+      //合并 分区数据
       val mergedPartitionData = convertedPartitionData ++ unauthorizedForReadPartitionData ++ nonExistingOrUnauthorizedForDescribePartitionData
 
       mergedPartitionData.foreach { case (topicAndPartition, data) =>

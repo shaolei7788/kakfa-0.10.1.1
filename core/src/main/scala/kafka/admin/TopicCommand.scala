@@ -33,7 +33,7 @@ import scala.collection.JavaConversions._
 import scala.collection._
 import org.apache.kafka.clients.consumer.{ConsumerConfig => NewConsumerConfig}
 
-
+//--zookeeper hadoop5:2181 --partitions 3 --replication-factor 2 --create --topic first
 object TopicCommand extends Logging {
 
   def main(args: Array[String]): Unit = {
@@ -88,22 +88,30 @@ object TopicCommand extends Logging {
       allTopics
   }
 
+  //创建topic
   def createTopic(zkUtils: ZkUtils, opts: TopicCommandOptions) {
-    val topic = opts.options.valueOf(opts.topicOpt)
+    //获取要创建的topic
+    val topic: String = opts.options.valueOf(opts.topicOpt)
+    //将config参数解析成Properties对象
     val configs = parseTopicConfigsToBeAdded(opts)
     val ifNotExists = opts.options.has(opts.ifNotExistsOpt)
+    //检测topic名称是否包含 ".","_" 字符，如包含则输出警告信息
     if (Topic.hasCollisionChars(topic))
       println("WARNING: Due to limitations in metric names, topics with a period ('.') or underscore ('_') could collide. To avoid issues it is best to use either, but not both.")
     try {
+      //手动分配标识
       if (opts.options.has(opts.replicaAssignmentOpt)) {
+        //副本手动分配
         val assignment = parseReplicaAssignment(opts.options.valueOf(opts.replicaAssignmentOpt))
         AdminUtils.createOrUpdateTopicPartitionAssignmentPathInZK(zkUtils, topic, assignment, configs, update = false)
       } else {
+        //副本自动分配
         CommandLineUtils.checkRequiredArgs(opts.parser, opts.options, opts.partitionsOpt, opts.replicationFactorOpt)
         val partitions = opts.options.valueOf(opts.partitionsOpt).intValue
         val replicas = opts.options.valueOf(opts.replicationFactorOpt).intValue
         val rackAwareMode = if (opts.options.has(opts.disableRackAware)) RackAwareMode.Disabled
                             else RackAwareMode.Enforced
+        //todo 自动分配副本，并写入zk
         AdminUtils.createTopic(zkUtils, topic, partitions, replicas, configs, rackAwareMode)
       }
       println("Created topic \"%s\".".format(topic))

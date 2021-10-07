@@ -24,15 +24,17 @@ import kafka.common.KafkaException
 
 import java.util.concurrent.atomic.AtomicLong
 
+//目的是为了增加kafka集群的高可用
 class Replica(val brokerId: Int,
-              val partition: Partition,
+              val partition: Partition,//副本对应的分区
               time: Time = SystemTime,
               initialHighWatermarkValue: Long = 0L,
               val log: Option[Log] = None) extends Logging {
   // the high watermark offset value, in non-leader replicas only its message offsets are kept
+  //此字段由leader副本负责更新维护 HW
   @volatile private[this] var highWatermarkMetadata: LogOffsetMetadata = new LogOffsetMetadata(initialHighWatermarkValue)
   // the log end offset value, kept in all replicas;
-  // for local replica it is the log's end offset, for remote replicas its value is only updated by follower fetch
+  // 记录的是追加到log中最新消息的offset 可直接从Log.nextOffsetMetadata获取  LEO
   @volatile private[this] var logEndOffsetMetadata: LogOffsetMetadata = LogOffsetMetadata.UnknownOffsetMetadata
 
   val topic = partition.topic
@@ -44,7 +46,7 @@ class Replica(val brokerId: Int,
       case None => false
     }
   }
-
+  //记录follower副本最后一次赶上leader 时间戳
   private[this] val lastCaughtUpTimeMsUnderlying = new AtomicLong(time.milliseconds)
 
   def lastCaughtUpTimeMs = lastCaughtUpTimeMsUnderlying.get()
@@ -56,12 +58,13 @@ class Replica(val brokerId: Int,
      * set the lastCaughtUpTimeMsUnderlying to the current time.
      * This means that the replica is fully caught up.
      */
+    //代表读到最后了
     if(logReadResult.isReadFromLogEnd) {
       lastCaughtUpTimeMsUnderlying.set(time.milliseconds)
     }
   }
 
-  private def logEndOffset_=(newLogEndOffset: LogOffsetMetadata) {
+  private def logEndOffset_= (newLogEndOffset: LogOffsetMetadata) {
     if (isLocal) {
       throw new KafkaException("Should not set log end offset on partition [%s,%d]'s local replica %d".format(topic, partitionId, brokerId))
     } else {
@@ -71,6 +74,7 @@ class Replica(val brokerId: Int,
     }
   }
 
+  //获取LEO
   def logEndOffset =
     if (isLocal)
       log.get.logEndOffsetMetadata
