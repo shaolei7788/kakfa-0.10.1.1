@@ -145,6 +145,7 @@ class OffsetIndex(file: File, baseOffset: Long, maxIndexSize: Int = -1)
 
   override def truncate() = truncateToEntries(0)
 
+
   override def truncateTo(offset: Long) {
     inLock(lock) {
       val idx = mmap.duplicate
