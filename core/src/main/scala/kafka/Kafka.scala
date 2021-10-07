@@ -18,7 +18,6 @@
 package kafka
 
 import java.util.Properties
-
 import joptsimple.OptionParser
 import kafka.server.{KafkaServer, KafkaServerStartable}
 import kafka.utils.{CommandLineUtils, Logging}
