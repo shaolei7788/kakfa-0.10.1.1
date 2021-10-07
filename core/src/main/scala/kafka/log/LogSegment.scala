@@ -128,7 +128,9 @@ class LogSegment(val log: FileMessageSet,
    */
   @threadsafe
   private[log] def translateOffset(offset: Long, startingFilePosition: Int = 0): (OffsetPosition, Int) = {
-    val mapping = index.lookup(offset)
+    // OffsetIndex#lookup  得到索引项
+    val mapping:OffsetPosition = index.lookup(offset)
+    // FileMessageSet#searchForOffsetWithSize
     log.searchForOffsetWithSize(offset, max(mapping.position, startingFilePosition))
   }
 
@@ -145,6 +147,7 @@ class LogSegment(val log: FileMessageSet,
    * @return The fetched data and the offset metadata of the first message whose offset is >= startOffset,
    *         or null if the startOffset is larger than the largest offset in this log
    */
+  //maxOffset 通常是Replica的HW
   @threadsafe
   def read(startOffset: Long, maxOffset: Option[Long], maxSize: Int, maxPosition: Long = size,
            minOneMessage: Boolean = false): FetchDataInfo = {
@@ -152,7 +155,8 @@ class LogSegment(val log: FileMessageSet,
       throw new IllegalArgumentException("Invalid max size for log read (%d)".format(maxSize))
 
     val logSize = log.sizeInBytes // this may change, need to save a consistent copy
-    val startOffsetAndSize = translateOffset(startOffset)
+    //todo 将startOffset 转化为 对应的物理地址
+    val startOffsetAndSize : (OffsetPosition, Int) = translateOffset(startOffset)
 
     // if the start position is already off the end of the log, return null
     if (startOffsetAndSize == null)
@@ -169,7 +173,7 @@ class LogSegment(val log: FileMessageSet,
     if (adjustedMaxSize == 0)
       return FetchDataInfo(offsetMetadata, MessageSet.Empty)
 
-    // calculate the length of the message set to read based on whether or not they gave us a maxOffset
+    // 读取的字节数
     val length = maxOffset match {
       case None =>
         // no max offset, just read until the max position
@@ -182,6 +186,7 @@ class LogSegment(val log: FileMessageSet,
         if (offset < startOffset) {
           return FetchDataInfo(offsetMetadata, MessageSet.Empty, firstMessageSetIncomplete = false)
         }
+        //todo 将maxOffset 转化为 对应的物理地址
         val mapping = translateOffset(offset, startPosition.position)
         val endPosition =
           if (mapping == null)
@@ -190,7 +195,7 @@ class LogSegment(val log: FileMessageSet,
             mapping._1.position
         min(min(maxPosition, endPosition) - startPosition.position, adjustedMaxSize).toInt
     }
-    //todo FetchDataInfo  样例类 log.read
+    //todo FetchDataInfo是样例类  Log.read 按照读取起始位置和长度生成一个分区的FileMessageSet对象，并没有真正的读取数据到内存
     FetchDataInfo(offsetMetadata, log.read(startPosition.position, length),
       firstMessageSetIncomplete = adjustedMaxSize < messageSetSize)
   }

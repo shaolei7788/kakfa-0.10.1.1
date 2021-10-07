@@ -44,7 +44,7 @@ class LogManager(val logDirs: Array[File],//log目录集合
                  val cleanerConfig: CleanerConfig,
                  ioThreads: Int,
                  val flushCheckMs: Long,
-                 val flushCheckpointMs: Long,
+                 val flushCheckpointMs: Long,//60000 = 60s
                  val retentionCheckMs: Long,
                  scheduler: Scheduler,
                  val brokerState: BrokerState,
@@ -212,7 +212,7 @@ class LogManager(val logDirs: Array[File],//log目录集合
       //todo 检查的恢复任务
       scheduler.schedule("kafka-recovery-point-checkpoint",
                          checkpointRecoveryPointOffsets,
-                         delay = InitialTaskDelayMs,
+                         delay = InitialTaskDelayMs,//30s
                          period = flushCheckpointMs,
                          TimeUnit.MILLISECONDS)
     }
@@ -434,7 +434,7 @@ class LogManager(val logDirs: Array[File],//log目录集合
    * Delete any eligible logs. Return the number of segments deleted.
    * Only consider logs that are not compacted.
    */
-  //todo
+  //todo 5 * 60 * 1000L 5 分钟执行一次
   def cleanupLogs() {
     debug("Beginning log cleanup...")
     var total = 0
@@ -442,10 +442,10 @@ class LogManager(val logDirs: Array[File],//log目录集合
     //如果log的cleanup.policy 配置不为delete 则不会进行删除
     for(log <- allLogs; if !log.config.compact) {
       debug("Garbage collecting '" + log.name + "'")
+      //todo 删除旧的segment 时间超过7*24 或文件大小超过1g
       total += log.deleteOldSegments()
     }
-    debug("Log cleanup completed. " + total + " files deleted in " +
-                  (time.milliseconds - startMs) / 1000 + " seconds")
+    debug("Log cleanup completed. " + total + " files deleted in " + (time.milliseconds - startMs) / 1000 + " seconds")
   }
 
   /**

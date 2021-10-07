@@ -544,22 +544,18 @@ class Log(val dir: File,//Log对应的磁盘文件
    * @param maxLength The maximum number of bytes to read
    * @param maxOffset The offset to read up to, exclusive. (i.e. this offset NOT included in the resulting message set)
    * @param minOneMessage If this is true, the first message will be returned even if it exceeds `maxLength` (if one exists)
-   *
    * @throws OffsetOutOfRangeException If startOffset is beyond the log end offset or before the base offset of the first segment.
    * @return The fetch data information including fetch starting offset metadata and messages read.
    */
   def read(startOffset: Long, maxLength: Int, maxOffset: Option[Long] = None, minOneMessage: Boolean = false): FetchDataInfo = {
     trace("Reading %d bytes from offset %d in log %s of length %d bytes".format(maxLength, startOffset, name, size))
-
-    // Because we don't use lock for reading, the synchronization is a little bit tricky.
-    // We create the local variables to avoid race conditions with updates to the log.
-    //将nextOffsetMetadata 保存成局部变量
+    //将nextOffsetMetadata 保存成局部变量 记录了Log中最后一个offset值
     val currentNextOffsetMetadata = nextOffsetMetadata
     val next = currentNextOffsetMetadata.messageOffset
     if(startOffset == next)
       return FetchDataInfo(currentNextOffsetMetadata, MessageSet.Empty)
 
-    //查询baseOffset小于startOffset 且 baseOffset 最大的segment
+    //todo 查询baseOffset小于startOffset 且 baseOffset 最大的segment
     var entry = segments.floorEntry(startOffset)
     // attempt to read beyond the log end offset is an error
     if(startOffset > next || entry == null)
@@ -573,23 +569,30 @@ class Log(val dir: File,//Log对应的磁盘文件
       // the message is appended but before the nextOffsetMetadata is updated. In that case the second fetch may
       // cause OffsetOutOfRangeException. To solve that, we cap the reading up to exposed position instead of the log
       // end of the active segment.
+      //todo 最大物理位置
       val maxPosition = {
         if (entry == segments.lastEntry) {
+          //读取activeSegment的情况
           val exposedPos = nextOffsetMetadata.relativePositionInSegment.toLong
           // Check the segment again in case a new segment has just rolled out.
-          if (entry != segments.lastEntry)
-            // New log segment has rolled out, we can read up to the file end.
+          if (entry != segments.lastEntry) {
+            // 写线程并发进行roll操作，变成了读取非activeSegment的情况
             entry.getValue.size
-          else
+          } else
             exposedPos
         } else {
+          //读取的是非activeSegment的情况，直接可以读取到LogSegment的结尾
           entry.getValue.size
         }
       }
       //todo 读取消息 entry.getValue = LogSegment  LogSegment#read
+      // startOffset 指定读取起始消息的偏移量
+      // maxOffset 指定读取结束消息的偏移量
+      // maxLength 最大字节数
+      // maxPosition 最大物理位置
       val fetchInfo = entry.getValue.read(startOffset, maxOffset, maxLength, maxPosition, minOneMessage)
-      //在此Logsegment中没读到数据，则继续读取下一个Logsegment
       if(fetchInfo == null) {
+        //在此Logsegment中没读到数据，则继续读取下一个Logsegment
         entry = segments.higherEntry(entry.getKey)
       } else {
         return fetchInfo
@@ -675,9 +678,11 @@ class Log(val dir: File,//Log对应的磁盘文件
       val numToDelete = deletable.size
       if (numToDelete > 0) {
         // we must always have at least one segment, so if we are going to delete all the segments, create a new one first
-        if (segments.size == numToDelete)
+        if (segments.size == numToDelete) {
+          //全部LogSegment都符合删除条件 至少保留一个LogSegment，删除前先创建一个新的activeSegment
           roll()
-        // remove the segments for lookups
+        }
+        // 删除LogSegment
         deletable.foreach(deleteSegment(_))
       }
       numToDelete
@@ -691,6 +696,7 @@ class Log(val dir: File,//Log对应的磁盘文件
     * @return the segments ready to be deleted
     */
   private def deletableSegments(predicate: LogSegment => Boolean) = {
+    //获取activeSegment
     val lastEntry = segments.lastEntry
     if (lastEntry == null) Seq.empty
     else logSegments.takeWhile(s => predicate(s) && (s.baseOffset != lastEntry.getValue.baseOffset || s.size > 0))
@@ -702,12 +708,15 @@ class Log(val dir: File,//Log对应的磁盘文件
     */
   def deleteOldSegments(): Int = {
     if (!config.delete) return 0
+    //todo deleteRetenionMsBreachedSegments 会根据存活时长判断是否要删除logsegment
+    //todo deleteRetentionSizeBreachedSegments 会根据文件大小判断是否要删除logsegment
     deleteRetenionMsBreachedSegments() + deleteRetentionSizeBreachedSegments()
   }
 
   private def deleteRetenionMsBreachedSegments() : Int = {
     if (config.retentionMs < 0) return 0
     val startMs = time.milliseconds
+    //删除条件是 Logsegment 的日志文件在最近一段时间内没有被修改  7 * 24 h
     deleteOldSegments(startMs - _.largestTimestamp > config.retentionMs)
   }
 
