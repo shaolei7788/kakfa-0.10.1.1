@@ -48,9 +48,9 @@ class ZookeeperLeaderElector(controllerContext: ControllerContext,
   def startup {
     inLock(controllerContext.controllerLock) {
       //todo electionPath = /controller
-      //注册数据改变监听器
+      //注册数据改变监听器 即监听kafka controller leader改变事件
       controllerContext.zkUtils.zkClient.subscribeDataChanges(electionPath, leaderChangeListener)
-      //todo 选举
+      //todo 进行选举
       elect
     }
   }
@@ -81,7 +81,7 @@ class ZookeeperLeaderElector(controllerContext: ControllerContext,
                                                       electString,
                                                       controllerContext.zkUtils.zkConnection.getZookeeper,
                                                       JaasUtils.isZkSecurityEnabled())
-      //创建临时节点 ，创建成功则是leader 创建失败则是follower ,到catch里面
+      //todo 创建临时节点 ，创建成功则是leader 创建失败则是follower ,到catch里面
       zkCheckedEphemeral.create()
       info(brokerId + " successfully elected as leader")
       leaderId = brokerId

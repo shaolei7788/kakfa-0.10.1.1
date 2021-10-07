@@ -39,12 +39,14 @@ import org.apache.kafka.common.requests.PartitionState
 /**
  * Data structure that represents a topic partition. The leader maintains the AR, ISR, CUR, RAR
  */
+//负责管理每个副本对应的replica对象，进行leader切换，ISR集合的管理以及调用日志存储子系统完成写入消息
 class Partition(val topic: String,
                 val partitionId: Int,
                 time: Time,
                 replicaManager: ReplicaManager) extends Logging with KafkaMetricsGroup {
   //当前broker的id
   private val localBrokerId = replicaManager.config.brokerId
+  //当前broker上的logManager
   private val logManager = replicaManager.logManager
   private val zkUtils = replicaManager.zkUtils
   //维护了该分区的全部副本集合
@@ -53,6 +55,7 @@ class Partition(val topic: String,
   private val leaderIsrUpdateLock = new ReentrantReadWriteLock()
   private var zkVersion: Int = LeaderAndIsr.initialZKVersion
   @volatile private var leaderEpoch: Int = LeaderAndIsr.initialLeaderEpoch - 1
+  //该分区的leader副本的id
   @volatile var leaderReplicaIdOpt: Option[Int] = None
   //维护了该分区的ISR集合
   @volatile var inSyncReplicas: Set[Replica] = Set.empty[Replica]
@@ -82,20 +85,29 @@ class Partition(val topic: String,
     }
   }
 
+  //todo
   def getOrCreateReplica(replicaId: Int = localBrokerId): Replica = {
+    //从assignedReplicaMap中获取查找的Replica对象
     val replicaOpt = getReplica(replicaId)
     replicaOpt match {
+      //查找到指定的replica对象，直接返回
       case Some(replica) => replica
       case None =>
+        //判断是否为本地副本
         if (isReplicaLocal(replicaId)) {
           val config = LogConfig.fromProps(logManager.defaultConfig.originals,
                                            AdminUtils.fetchEntityConfig(zkUtils, ConfigType.Topic, topic))
-          val log = logManager.createLog(TopicAndPartition(topic, partitionId), config)
+          //创建local replica 对应的log对象
+          val log: Log = logManager.createLog(TopicAndPartition(topic, partitionId), config)
+          //获取指定log目录对应的OffsetCheckpoint对象，它负责管理该log目录下的 replication-offset-checkpoint 文件
           val checkpoint = replicaManager.highWatermarkCheckpoints(log.dir.getParentFile.getAbsolutePath)
+          //读取replication-offset-checkpoint文件形成map
           val offsetMap = checkpoint.read
           if (!offsetMap.contains(TopicAndPartition(topic, partitionId)))
             info("No checkpointed highwatermark is found for partition [%s,%d]".format(topic, partitionId))
+          //根据TopicAndPartition 找到对应的HW，再与LEO比较，此值会作为此副本的HW
           val offset = offsetMap.getOrElse(TopicAndPartition(topic, partitionId), 0L).min(log.logEndOffset)
+          //创建Replica 对象并添加到 assignedReplicaMap
           val localReplica = new Replica(replicaId, this, time, offset, Some(log))
           addReplicaIfNotExists(localReplica)
         } else {
@@ -165,12 +177,14 @@ class Partition(val topic: String,
    */
   def makeLeader(controllerId: Int, partitionStateInfo: PartitionState, correlationId: Int): Boolean = {
     val (leaderHWIncremented, isNewLeader) = inWriteLock(leaderIsrUpdateLock) {
+      //获取需要分配的AR
       val allReplicas = partitionStateInfo.replicas.asScala.map(_.toInt)
       // record the epoch of the controller that made the leadership decision. This is useful while updating the isr
       // to maintain the decision maker controller's epoch in the zookeeper path
       controllerEpoch = partitionStateInfo.controllerEpoch
-      // add replicas that are new
+      // 创建AR集合中所有副本对应的replica对象
       allReplicas.foreach(replica => getOrCreateReplica(replica))
+      //todo 获取ISR集合
       val newInSyncReplicas = partitionStateInfo.isr.asScala.map(r => getOrCreateReplica(r)).toSet
       // remove assigned replicas that have been removed by the controller
       (assignedReplicas().map(_.brokerId) -- allReplicas).foreach(removeReplica(_))
@@ -189,12 +203,13 @@ class Partition(val topic: String,
       if (isNewLeader) {
         // construct the high watermark metadata for the new leader replica
         leaderReplica.convertHWToLocalOffsetMetadata()
-        // reset log end offset for remote replicas
+        // 重置所有的remote replica 的LEO为-1
         assignedReplicas.filter(_.brokerId != localBrokerId).foreach(_.updateLogReadResult(LogReadResult.UnknownLogReadResult))
       }
+      //尝试更新HW
       (maybeIncrementLeaderHW(leaderReplica), isNewLeader)
     }
-    // some delayed operations may be unblocked after HW changed
+    // leader 副本的HW增加了，则可能有DelayedFetch满足执行条件
     if (leaderHWIncremented)
       tryCompleteDelayedRequests()
     isNewLeader
@@ -349,11 +364,16 @@ class Partition(val topic: String,
    * Note There is no need to acquire the leaderIsrUpdate lock here
    * since all callers of this private API acquire that lock
    */
+  //尝试后移leader副本的HW,当ISR集合发生增或减或是ISR集合任一副本LEO发生变化，都有可能导致ISR集合中最新的leo变大
   private def maybeIncrementLeaderHW(leaderReplica: Replica): Boolean = {
+    //获取ISR集合中所有的副本LEO
     val allLogEndOffsets = inSyncReplicas.map(_.logEndOffset)
+    //将ISR集合中最小的LEO作为HW
     val newHighWatermark = allLogEndOffsets.min(new LogOffsetMetadata.OffsetOrdering)
+    //获取当前的hw
     val oldHighWatermark = leaderReplica.highWatermark
     if (oldHighWatermark.messageOffset < newHighWatermark.messageOffset || oldHighWatermark.onOlderSegment(newHighWatermark)) {
+      //更新HW
       leaderReplica.highWatermark = newHighWatermark
       debug("High watermark for partition [%s,%d] updated to %s".format(topic, partitionId, newHighWatermark))
       true

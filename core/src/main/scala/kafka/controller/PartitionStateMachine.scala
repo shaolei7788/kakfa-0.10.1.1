@@ -183,7 +183,7 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
               //todo 为新的分区初始化主副本和ISR
               initializeLeaderAndIsrForPartition(topicAndPartition)
             case OfflinePartition =>
-              //已经下线的分区要上线，就必须重新选举主副本
+              //todo 已经下线的分区要上线，就必须重新选举主副本
               electLeaderForPartition(topic, partition, leaderSelector)
             case OnlinePartition => // invoked when the leader needs to be re-elected
               //重新选举主副本

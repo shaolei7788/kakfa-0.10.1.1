@@ -47,7 +47,7 @@ import kafka.utils.CoreUtils._
  *                        ReplicaDeletionSuccessful
  */
 /**
- * 1. NewReplica: 新创建主题，重新分配分区(增加分区)时创建新副本，副本状态为 新建，该状态下副本只能收到 成为follower副本请求
+ * 1. NewReplica: 新创建主题，重新分配分区(将分区的副本重新分配到不同的broker上)时创建新副本，副本状态为 新建，该状态下副本只能收到 成为follower副本请求
  * 2. OnlineReplica: 当副本启动，并且是分区副本集的一部分，副本状态为在线，该状态可用收到成为leader副本或成为follower副本请求
  * 3. OfflineReplica: broker宕机后，节点上的所有副本状态为下线
  * 4. NonExistentReplica: 副本被成功删除后，状态为不存在
@@ -73,7 +73,7 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
    * Then triggers the OnlineReplica state change for all replicas.
    */
   def startup() {
-    // initialize replica state
+    // 初始化副本状态 副本如果存活，状态是上线，如果不存活状态为 删除失败
     initializeReplicaState()
     // set started flag
     hasStarted.set(true)
@@ -338,19 +338,21 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
    * Invoked on startup of the replica's state machine to set the initial state for replicas of all existing partitions
    * in zookeeper
    */
+  //副本如果存活，状态是上线，如果不存活状态为 删除失败
   private def initializeReplicaState() {
     for((topicPartition, assignedReplicas) <- controllerContext.partitionReplicaAssignment) {
       val topic = topicPartition.topic
       val partition = topicPartition.partition
+      //AR
       assignedReplicas.foreach { replicaId =>
         val partitionAndReplica = PartitionAndReplica(topic, partition, replicaId)
-        if (controllerContext.liveBrokerIds.contains(replicaId))
+        if (controllerContext.liveBrokerIds.contains(replicaId)) {
+          //todo 副本如果存活，状态是上线
           replicaState.put(partitionAndReplica, OnlineReplica)
-        else
-          // mark replicas on dead brokers as failed for topic deletion, if they belong to a topic to be deleted.
-          // This is required during controller failover since during controller failover a broker can go down,
-          // so the replicas on that broker should be moved to ReplicaDeletionIneligible to be on the safer side.
+        } else {
+          //todo 如果不存活状态为 删除失败
           replicaState.put(partitionAndReplica, ReplicaDeletionIneligible)
+        }
       }
     }
   }
@@ -360,6 +362,9 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
   }
 
   //todo BrokerChangeListener 监听器会读取 /brokers/ids/ 最新的代理节点列表
+  // broker 上线有两种情况 新启动，重新启动，
+  // 新启动的broker之前不在集群中，没有分配到任何分区，控制器不会处理分区和副本的状态改变
+  // 重新启动的broker之前在集群中，有分配到任何分区，控制器会处理分区和副本的状态改变
   class BrokerChangeListener() extends IZkChildListener with Logging {
     this.logIdent = "[BrokerChangeListener on Controller " + controller.config.brokerId + "]: "
     def handleChildChange(parentPath : String, currentBrokerList : java.util.List[String]) {
@@ -390,8 +395,10 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
                 //todo broker上线
                 controller.onBrokerStartup(newBrokerIdsSorted)
               }
-              if(deadBrokerIds.nonEmpty)
+              if(deadBrokerIds.nonEmpty) {
+                //todo broker下线 它上面所有副本的状态都会被更改成 下线状态，如果下线的broker有分区主副本，则控制器对没有主副本的分区进行选举
                 controller.onBrokerFailure(deadBrokerIdsSorted)
+              }
             } catch {
               case e: Throwable => error("Error while handling broker changes", e)
             }

@@ -62,7 +62,7 @@ class ControllerContext(val zkUtils: ZkUtils,
   var allTopics: Set[String] = Set.empty
   //记录了每个分区的AR集合
   var partitionReplicaAssignment: mutable.Map[TopicAndPartition, Seq[Int]] = mutable.Map.empty
-  //记录了每个分区的leader副本所在的brokerid ISR集合 以及epoch等信息
+  //记录了每个分区的   leader副本所在的brokerid ISR集合 以及epoch等信息
   var partitionLeadershipInfo: mutable.Map[TopicAndPartition, LeaderIsrAndControllerEpoch] = mutable.Map.empty
   //记录了正在重新分配副本的分区
   val partitionsBeingReassigned: mutable.Map[TopicAndPartition, ReassignedPartitionsContext] = new mutable.HashMap
@@ -340,15 +340,15 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
       readControllerEpochFromZookeeper()
       //todo 增加 controller epoch
       incrementControllerEpoch(zkUtils.zkClient)
-      //todo 注册重新分配分区监听器
+      //todo 注册重新分配分区监听器 /admin/reassign_partitions
       registerReassignedPartitionsListener()
       //todo 发生变化时的监听器，更新元数据 监听器
       registerIsrChangeNotificationListener()
       //todo 选举最优的副本作为分区的主副本 监听器
       registerPreferredReplicaElectionListener()
-      //todo 注册更改主题的状态器
+      //todo 注册更改主题的状态器 /brokers/topics
       partitionStateMachine.registerListeners()
-      //todo 注册更改代理节点的状态器
+      //todo 注册更改代理节点的状态器 /brokers/ids
       replicaStateMachine.registerListeners()
       //todo 1 初始化控制器上下文 2 启动通道管理器
       initializeControllerContext()
@@ -491,17 +491,18 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
       deadBrokers.filter(id => controllerContext.shuttingDownBrokerIds.remove(id))
     info("Removed %s from list of shutting down brokers.".format(deadBrokersThatWereShuttingDown))
     val deadBrokersSet = deadBrokers.toSet
-    // trigger OfflinePartition state for all partitions whose current leader is one amongst the dead brokers
+    // 没有leader的分区
     val partitionsWithoutLeader = controllerContext.partitionLeadershipInfo.filter(partitionAndLeader =>
       deadBrokersSet.contains(partitionAndLeader._2.leaderAndIsr.leader) &&
         !deleteTopicManager.isTopicQueuedUpForDeletion(partitionAndLeader._1.topic)).keySet
+    //todo 将这些分区的状态从上线状态更改为下线状态  只是更改状态
     partitionStateMachine.handleStateChanges(partitionsWithoutLeader, OfflinePartition)
-    // trigger OnlinePartition state changes for offline or new partitions
+    //todo 重新选举分区的主副本，下线状态的分区会转为上线状态
     partitionStateMachine.triggerOnlinePartitionStateChange()
-    // filter out the replicas that belong to topics that are being deleted
+    //todo 获取指定broker中保存的所有副本
     var allReplicasOnDeadBrokers = controllerContext.replicasOnBrokers(deadBrokersSet)
     val activeReplicasOnDeadBrokers = allReplicasOnDeadBrokers.filterNot(p => deleteTopicManager.isTopicQueuedUpForDeletion(p.topic))
-    // handle dead replicas
+    // 不需要删除的副本，状态转为下线，需要删除的则由broker下线，先标记为删除失败
     replicaStateMachine.handleStateChanges(activeReplicasOnDeadBrokers, OfflineReplica)
     // check if topic deletion state for the dead replicas needs to be updated
     val replicasForTopicsToBeDeleted = allReplicasOnDeadBrokers.filter(p => deleteTopicManager.isTopicQueuedUpForDeletion(p.topic))
@@ -512,8 +513,8 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
       deleteTopicManager.failReplicaDeletion(replicasForTopicsToBeDeleted)
     }
 
-    // If broker failure did not require leader re-election, inform brokers of failed broker
-    // Note that during leader re-election, brokers update their metadata
+    //todo 主副本都没有在下线的broker,通知所有代理节点更新元数据
+    // 如果主副本在下先的broker,在重新选举主副本时，就会发送请求给所有的broker
     if (partitionsWithoutLeader.isEmpty) {
       sendUpdateMetadataRequest(controllerContext.liveOrShuttingDownBrokerIds.toSeq)
     }
@@ -702,10 +703,10 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
   def startup() = {
     inLock(controllerContext.controllerLock) {
       info("Controller starting up")
-      //注册监听器 当KafkaController与zookeeper的连接超时后创建新连接时会触发 SessionExpirationListener#handleNewSession
+      //todo 注册session会话超时监听器 当KafkaController与zookeeper的连接超时后创建新连接时会触发 SessionExpirationListener#handleNewSession
       registerSessionExpirationListener()
       isRunning = true
-      //todo 启动Controller Leader选举
+      //todo ZookeeperLeaderElector#startup 主要用于Controller Leader选举
       controllerElector.startup
       info("Controller startup complete")
     }
