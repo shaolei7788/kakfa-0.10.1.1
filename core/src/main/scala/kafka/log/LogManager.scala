@@ -51,7 +51,7 @@ class LogManager(val logDirs: Array[File],//数据目录
                  scheduler: Scheduler,
                  val brokerState: BrokerState,
                  private val time: Time) extends Logging {
-  //记录每个分区的HW
+  //记录每个分区的偏移量
   val RecoveryPointCheckpointFile = "recovery-point-offset-checkpoint"
   //为每个log目录文件加锁
   val LockFile = ".lock"
