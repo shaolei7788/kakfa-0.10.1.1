@@ -245,7 +245,6 @@ abstract class AbstractIndex[K, V](@volatile private[this] var _file: File, val 
     if(_entries == 0)
       return -1
 
-
     // check if the target offset is smaller than the least offset
     if(compareIndexEntry(parseEntry(idx, 0), target, searchEntity) > 0)
       return -1
