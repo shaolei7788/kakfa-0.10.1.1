@@ -396,9 +396,9 @@ class Partition(val topic: String,
     //获取ISR集合中所有LEO
     val allLogEndOffsets = inSyncReplicas.map(_.logEndOffset)
     //将ISR集合中最小的LEO作为HW
-    val newHighWatermark: LogOffsetMetadata = allLogEndOffsets.min(new LogOffsetMetadata.OffsetOrdering)
+    val newHighWatermark = allLogEndOffsets.min(new LogOffsetMetadata.OffsetOrdering)
     //获取当前的hw
-    val oldHighWatermark : LogOffsetMetadata = leaderReplica.highWatermark
+    val oldHighWatermark = leaderReplica.highWatermark
     if (oldHighWatermark.messageOffset < newHighWatermark.messageOffset || oldHighWatermark.onOlderSegment(newHighWatermark)) {
       //更新HW
       leaderReplica.highWatermark = newHighWatermark

@@ -488,7 +488,7 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
    * Handle a fetch request
    */
   def handleFetchRequest(request: RequestChannel.Request) {
-    val fetchRequest: FetchRequest = request.requestObj.asInstanceOf[FetchRequest]
+    val fetchRequest = request.requestObj.asInstanceOf[FetchRequest]
 
     val (existingAndAuthorizedForDescribeTopics, nonExistingOrUnauthorizedForDescribeTopics) = fetchRequest.requestInfo.partition {
       case (topicAndPartition, _) => authorize(request.session, Describe, new Resource(auth.Topic, topicAndPartition.topic)) && metadataCache.contains(topicAndPartition.topic)
