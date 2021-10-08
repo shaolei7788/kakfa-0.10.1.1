@@ -133,6 +133,7 @@ class LogSegment(val log: FileMessageSet,
    * @return The position in the log storing the message with the least offset >= the requested offset and the size of the
     *        message or null if no message meets this criteria.
    */
+  // startingFilePosition 起始偏移量对应的物理位置 从那个物理地址开始找
   @threadsafe
   private[log] def translateOffset(offset: Long, startingFilePosition: Int = 0): (OffsetPosition, Int) = {
     //todo OffsetIndex#lookup  通过二分查找 得到索引项
@@ -154,7 +155,11 @@ class LogSegment(val log: FileMessageSet,
    * @return The fetched data and the offset metadata of the first message whose offset is >= startOffset,
    *         or null if the startOffset is larger than the largest offset in this log
    */
-  //maxOffset 通常是Replica的HW
+  // 对于消费者拉取数据 maxOffset通常是主副本的HW
+  // startOffset 起始偏移量
+  // maxOffset   最大偏移量
+  // maxSize     拉取的最大长度
+  // maxPosition 最大物理位置
   @threadsafe
   def read(startOffset: Long, maxOffset: Option[Long], maxSize: Int, maxPosition: Long = size,
            minOneMessage: Boolean = false): FetchDataInfo = {
@@ -168,9 +173,11 @@ class LogSegment(val log: FileMessageSet,
     if (startOffsetAndSize == null)
       return null
 
+    //
     val (startPosition, messageSetSize) = startOffsetAndSize
     val offsetMetadata = new LogOffsetMetadata(startOffset, this.baseOffset, startPosition.position)
 
+    //
     val adjustedMaxSize =
       if (minOneMessage) math.max(maxSize, messageSetSize)
       else maxSize
@@ -192,13 +199,16 @@ class LogSegment(val log: FileMessageSet,
         if (offset < startOffset) {
           return FetchDataInfo(offsetMetadata, MessageSet.Empty, firstMessageSetIncomplete = false)
         }
-        //todo 将maxOffset 转化为 对应的物理地址
+        //todo 将maxOffset 转化为 对应的物理地址   startPosition.position = 起始偏移量对应的物理位置
         val mapping = translateOffset(offset, startPosition.position)
         val endPosition =
-          if (mapping == null)
+          if (mapping == null) {
+            //没找到最大偏移量对应的物理地址直接返回logsegment的大小
             logSize // the max offset is off the end of the log, use the end of the file
-          else
+          } else {
+            //最大偏移量对应的物理地址
             mapping._1.position
+          }
         min(min(maxPosition, endPosition) - startPosition.position, adjustedMaxSize).toInt
     }
     //todo FetchDataInfo是样例类  Log.read 按照读取起始位置和长度生成一个分区的FileMessageSet对象，并没有真正的读取数据到内存

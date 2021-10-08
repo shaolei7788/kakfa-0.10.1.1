@@ -135,7 +135,7 @@ class ReplicaManager(val config: KafkaConfig,
   private val highWatermarkCheckPointThreadStarted = new AtomicBoolean(false)
 
   //缓存每个数据目录跟OffsetCheckpoint之间的对应关系 logDirs可以配置多个文件路径，但一般只配置一个
-  //OffsetCheckpoint记录了log目录下的replication-offset-checkpoint文件，
+  //OffsetCheckpoint记录了log目录下的 replication-offset-checkpoint文件，记录了每个分区的HW
   val highWatermarkCheckpoints  = config.logDirs.map(dir => (new File(dir).getAbsolutePath, new OffsetCheckpoint(new File(dir, ReplicaManager.HighWatermarkFilename)))).toMap
   private var hwThreadInitialized = false
   this.logIdent = "[Replica Manager on Broker " + localBrokerId + "]: "
@@ -1023,9 +1023,11 @@ class ReplicaManager(val config: KafkaConfig,
     val replicas = allPartitions.values.flatMap(_.getReplica(config.brokerId))
     val replicasByDir = replicas.filter(_.log.isDefined).groupBy(_.log.get.dir.getParentFile.getAbsolutePath)
     for ((dir, reps) <- replicasByDir) {
+      // dir 数据目录
       val hwms = reps.map(r => new TopicAndPartition(r) -> r.highWatermark.messageOffset).toMap
       try {
-        highWatermarkCheckpoints(dir).write(hwms)
+        val hw : OffsetCheckpoint = highWatermarkCheckpoints(dir)
+        hw.write(hwms)
       } catch {
         case e: IOException =>
           fatal("Error writing to highwatermark file: ", e)

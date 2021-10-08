@@ -38,7 +38,7 @@ import java.util.concurrent.{ExecutionException, ExecutorService, Executors, Fut
  * A background thread handles log retention by periodically truncating excess log segments.
  */
 //每个数据目录对应一个全局的检查点文件，检查点文件会存储这个数据目录下所有日志的检查点信息，检查点表示日志已经刷新到磁盘的位置，主要用于故障的恢复
-//
+//定时将所有分区副本的偏移量,刷写到恢复点文件
 @threadsafe
 class LogManager(val logDirs: Array[File],//数据目录
                  val topicConfigs: Map[String, LogConfig],
@@ -51,6 +51,7 @@ class LogManager(val logDirs: Array[File],//数据目录
                  scheduler: Scheduler,
                  val brokerState: BrokerState,
                  private val time: Time) extends Logging {
+  //记录每个分区的HW
   val RecoveryPointCheckpointFile = "recovery-point-offset-checkpoint"
   //为每个log目录文件加锁
   val LockFile = ".lock"

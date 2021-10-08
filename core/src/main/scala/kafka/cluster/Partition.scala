@@ -131,7 +131,7 @@ class Partition(val topic: String,
   //2         2             2               Some(Replica(2))  Some(Replica(2))
   //3         3             2               None              Some(Replica(3))
 
-  //获取分区指定编号的副本，默认是当前broker对应的编号
+  //获取指定replicaId的副本，默认是当前broker对应的编号
   def getReplica(replicaId: Int = localBrokerId): Option[Replica] = {
     val replica = assignedReplicaMap.get(replicaId)
     if (replica == null) {

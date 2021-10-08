@@ -126,8 +126,6 @@ abstract class AbstractIndex[K, V](@volatile private[this] var _file: File, val 
 
   /**
    * Rename the file that backs this offset index
-   *
-   * @throws IOException if rename fails
    */
   def renameTo(f: File) {
     try Utils.atomicMoveWithFallback(_file.toPath, f.toPath)

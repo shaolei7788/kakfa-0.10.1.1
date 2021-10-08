@@ -87,12 +87,16 @@ class OffsetIndex(file: File, baseOffset: Long, maxIndexSize: Int = -1)
    */
   def lookup(targetOffset: Long): OffsetPosition = {
     maybeLock(lock) {
-      val idx = mmap.duplicate
+      //查询时mmp会发生变化，所以先复制出来
+      val idx : ByteBuffer = mmap.duplicate
+      //通过二分查找 查找小于等于目标偏移量的最大偏移量
       val slot = indexSlotFor(idx, targetOffset, IndexSearchType.KEY)
-      if(slot == -1)
+      if(slot == -1) {
+        //没找到
         OffsetPosition(baseOffset, 0)
-      else
+      } else {
         parseEntry(idx, slot).asInstanceOf[OffsetPosition]
+      }
     }
   }
 
