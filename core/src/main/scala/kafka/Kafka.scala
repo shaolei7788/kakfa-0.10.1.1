@@ -64,8 +64,7 @@ object Kafka extends Logging {
     }
     catch {
       case e: Throwable =>
-        e.printStackTrace()
-        //fatal(e)
+        fatal(e)
         System.exit(1)
     }
     System.exit(0)
