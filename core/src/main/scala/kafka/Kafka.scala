@@ -49,7 +49,7 @@ object Kafka extends Logging {
 
   def main(args: Array[String]): Unit = {
     try {
-      print(" start kafka server")
+      print("====start kafka server====")
       val serverProps = getPropsFromArgs(args)
       val kafkaServerStartable = KafkaServerStartable.fromProps(serverProps)
 
@@ -64,7 +64,8 @@ object Kafka extends Logging {
     }
     catch {
       case e: Throwable =>
-        fatal(e)
+        e.printStackTrace()
+        //fatal(e)
         System.exit(1)
     }
     System.exit(0)

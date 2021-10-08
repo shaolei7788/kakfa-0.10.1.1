@@ -443,7 +443,7 @@ class ReplicaManager(val config: KafkaConfig,
         //我们自己创建的topic
         try {
           //todo 获取对应的分区对象 因为只有leader副本所在的broker_id才会收到消息
-          val partitionOpt: Option[Partition] = getPartition(topicPartition.topic, topicPartition.partition)
+          val partitionOpt = getPartition(topicPartition.topic, topicPartition.partition)
           val info = partitionOpt match {
             case Some(partition) =>
               //todo 通过分区对象添加消息
