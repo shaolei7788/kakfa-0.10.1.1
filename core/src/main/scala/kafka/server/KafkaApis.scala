@@ -161,7 +161,7 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
       val responseHeader = new ResponseHeader(correlationId)
       val leaderAndIsrResponse =
         if (authorize(request.session, ClusterAction, Resource.ClusterResource)) {
-          //todo 授权
+          //todo 切换成leader或follower
           val result = replicaManager.becomeLeaderOrFollower(correlationId, leaderAndIsrRequest, metadataCache, onLeadershipChange)
           new LeaderAndIsrResponse(result.errorCode, result.responseMap.mapValues(new JShort(_)).asJava)
         } else {
@@ -475,11 +475,20 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
     }
   }
 
+
+
+
+  // 备份副本同步数据时，除了更新备份副本的偏移量，也会更新备份副本的最高水位，也可能更新主副本的HW
+  // 生产者往主副本写数据，主副本的LEO增加，初始时所有副本的HW都为0
+  // 备份副本拉取数据，更新本地的LEO，拉取响应带有主副本的HW,但主副本的HW还是0，备份副本的HW也是0
+  // 备份副本再次拉取数据，主副本会根据备份副本发送过来的LEO,选择最小的的一个LEO 更新HW的值,此时主副本会将该HW返回给备份副本
+  // 备份副本拉取到数据，会更新本地的LEO和HW
+
   /**
    * Handle a fetch request
    */
   def handleFetchRequest(request: RequestChannel.Request) {
-    val fetchRequest = request.requestObj.asInstanceOf[FetchRequest]
+    val fetchRequest: FetchRequest = request.requestObj.asInstanceOf[FetchRequest]
 
     val (existingAndAuthorizedForDescribeTopics, nonExistingOrUnauthorizedForDescribeTopics) = fetchRequest.requestInfo.partition {
       case (topicAndPartition, _) => authorize(request.session, Describe, new Resource(auth.Topic, topicAndPartition.topic)) && metadataCache.contains(topicAndPartition.topic)

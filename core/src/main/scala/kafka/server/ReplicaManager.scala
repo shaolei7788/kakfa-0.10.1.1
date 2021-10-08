@@ -97,11 +97,11 @@ object ReplicaManager {
   val IsrChangePropagationBlackOut = 5000L
   val IsrChangePropagationInterval = 60000L
 }
-
-//与日志存储相关的业务组件是副本管理器，负责日志的底层类是日志管理器，副本管理器通过日志管理器间接操作底层的日志
-//服务端创建日志读取日志，管理日志都只能通过日志管理器完成，实际上，日志管理器会传递给副本管理器，
+//todo
+// 与日志存储相关的业务组件是副本管理器，负责日志的底层类是日志管理器，副本管理器通过日志管理器间接操作底层的日志
+// 服务端创建日志读取日志，管理日志都只能通过日志管理器完成，实际上，日志管理器会传递给副本管理器，
 // 而副本管理器管理所有的分区，分区管理所有的副本，每个副本对应一个日志，分区在创建副本时才会创建日志，每个分区都需要持有副本管理器的引用，才能通过日志管理器创建日志
-
+// 副本管理器将日志管理器这个全局变量传递了它所管理的每个分区,副本管理器的每个分区通过日志管理器，为每个副本创建对应的日志
 class ReplicaManager(val config: KafkaConfig,
                      metrics: Metrics,
                      time: Time,
@@ -122,6 +122,7 @@ class ReplicaManager(val config: KafkaConfig,
   private val localBrokerId = config.brokerId
 
   //保存了当前broker上分配的所有partition  Pool有个pool属性底层是ConcurrentHashMap
+  // getAndMaybePut 会放入数据
   private val allPartitions = new Pool[(String, Int), Partition](valueFactory = Some { case (t, p) =>
     new Partition(t, p, time, this)
   })
@@ -132,6 +133,7 @@ class ReplicaManager(val config: KafkaConfig,
   val replicaFetcherManager = new ReplicaFetcherManager(config, this, metrics, jTime, threadNamePrefix, quotaManager)
 
   private val highWatermarkCheckPointThreadStarted = new AtomicBoolean(false)
+
   //缓存每个数据目录跟OffsetCheckpoint之间的对应关系 logDirs可以配置多个文件路径，但一般只配置一个
   //OffsetCheckpoint记录了log目录下的replication-offset-checkpoint文件，
   val highWatermarkCheckpoints  = config.logDirs.map(dir => (new File(dir).getAbsolutePath, new OffsetCheckpoint(new File(dir, ReplicaManager.HighWatermarkFilename)))).toMap
@@ -365,7 +367,10 @@ class ReplicaManager(val config: KafkaConfig,
                   //封装响应结果
                   new PartitionResponse(result.errorCode, result.info.firstOffset, result.info.logAppendTime)) // response status
       }
-
+      //todo 判断是否创建延迟生产的请求 有3个要求
+      // 1 生产者等待所有ISR备份副本都向主副本发送应答 requiredAcks == -1
+      // 2 生产者发送的消息有数据： messagesPerPartition.size > 0
+      // 3 至少有一个分区写入主副本的本地日志文件是成功的
       if (delayedRequestRequired(requiredAcks, messagesPerPartition, localProduceResults)) {
         // create delayed produce operation
         val produceMetadata = ProduceMetadata(requiredAcks, produceStatus)
@@ -491,7 +496,7 @@ class ReplicaManager(val config: KafkaConfig,
    * the callback function will be triggered either when timeout or required fetch info is satisfied
    */
   def fetchMessages(timeout: Long,
-                    replicaId: Int,//消费者 则为-1
+                    replicaId: Int,//消费者 则为-1 备份副本的编号
                     fetchMinBytes: Int,
                     fetchMaxBytes: Int,
                     hardMaxBytesLimit: Boolean,
@@ -533,6 +538,11 @@ class ReplicaManager(val config: KafkaConfig,
     //                        2) fetch request does not require any data
     //                        3) has enough data to respond
     //                        4) some error happens while reading data
+    //todo 对应拉取请求，必须同时满足下面四个条件，服务端才需要 延迟返回拉取结果 给客户端
+    // 1 拉取请求设置的等待时间 > 0
+    // 2 拉取请求要有拉取分区 fetchInfo.size > 0
+    // 3 本次拉取还没有收集足够的数据 bytesReadable < fetchMinBytes
+    // 4 拉取分区时不能发送错误
     if (timeout <= 0 || fetchInfos.isEmpty || bytesReadable >= fetchMinBytes || errorReadingData) {
       val fetchPartitionData = logReadResults.map { case (tp, result) =>
         tp -> FetchResponsePartitionData(result.errorCode, result.hw, result.info.messageSet)
@@ -548,6 +558,7 @@ class ReplicaManager(val config: KafkaConfig,
       }
       val fetchMetadata = FetchMetadata(fetchMinBytes, fetchMaxBytes, hardMaxBytesLimit, fetchOnlyFromLeader,
         fetchOnlyCommitted, isFromFollower, replicaId, fetchPartitionStatus)
+      //创建延迟拉取对象
       val delayedFetch = new DelayedFetch(timeout, fetchMetadata, this, quota, responseCallback)
 
       // create a list of (topic, partition) pairs to use as keys for this delayed fetch operation
@@ -723,7 +734,7 @@ class ReplicaManager(val config: KafkaConfig,
         // 保留与当前broker相关的Partition PartitionState
         val partitionState = new mutable.HashMap[Partition, PartitionState]()
         leaderAndISRRequest.partitionStates.asScala.foreach { case (topicPartition, stateInfo) =>
-          //获取或创建分区，如果分区已经存在直接返回，否则创建一个新分区
+          //todo 获取或创建分区，如果分区已经存在直接返回，否则创建一个新分区
           val partition : Partition = getOrCreatePartition(topicPartition.topic, topicPartition.partition)
           val partitionLeaderEpoch = partition.getLeaderEpoch()
           //检测leaderEpoch
@@ -991,11 +1002,11 @@ class ReplicaManager(val config: KafkaConfig,
     readResults.foreach { case (topicAndPartition, readResult) =>
       getPartition(topicAndPartition.topic, topicAndPartition.partition) match {
         case Some(partition) =>
-          //todo 可能扩张ISR集合 更新每个分区的备份副本
+          //todo  1 更新备份副本的偏移量 2 可能扩张ISR集合
           partition.updateReplicaLogReadResult(replicaId, readResult)
           // for producer requests with ack > 1, we need to check
           // if they can be unblocked after some follower's log end offsets have moved
-          //尝试完成被延迟的生产请求
+          //当更新了备份副本的LEO后，尝试完成被延迟的生产请求
           tryCompleteDelayedProduce(new TopicPartitionOperationKey(topicAndPartition))
         case None =>
           warn("While recording the replica LEO, the partition %s hasn't been created.".format(topicAndPartition))

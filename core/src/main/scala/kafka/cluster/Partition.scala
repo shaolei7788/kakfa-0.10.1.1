@@ -39,6 +39,7 @@ import org.apache.kafka.common.requests.PartitionState
 /**
  * Data structure that represents a topic partition. The leader maintains the AR, ISR, CUR, RAR
  */
+//分区是一个有状态的数据结构
 //负责管理每个副本对应的replica对象，进行leader切换，ISR集合的管理以及调用日志存储子系统完成写入消息
 class Partition(val topic: String,
                 val partitionId: Int,
@@ -46,16 +47,18 @@ class Partition(val topic: String,
                 replicaManager: ReplicaManager) extends Logging with KafkaMetricsGroup {
   //当前broker的id
   private val localBrokerId = replicaManager.config.brokerId
+
   //当前broker上的logManager
   private val logManager = replicaManager.logManager
+
   private val zkUtils = replicaManager.zkUtils
-  //维护了该分区的全部副本集合
+  //维护了该分区的全部副本集合 AR
   private val assignedReplicaMap = new Pool[Int, Replica]
   // The read lock is only required when multiple reads are executed and needs to be in a consistent manner
   private val leaderIsrUpdateLock = new ReentrantReadWriteLock()
   private var zkVersion: Int = LeaderAndIsr.initialZKVersion
   @volatile private var leaderEpoch: Int = LeaderAndIsr.initialLeaderEpoch - 1
-  //该分区的leader副本的id
+  //该分区leader副本的id
   @volatile var leaderReplicaIdOpt: Option[Int] = None
   //维护了该分区的ISR集合
   @volatile var inSyncReplicas: Set[Replica] = Set.empty[Replica]
@@ -64,7 +67,9 @@ class Partition(val topic: String,
   private var controllerEpoch: Int = KafkaController.InitialControllerEpoch - 1
   this.logIdent = "Partition [%s,%d] on broker %d: ".format(topic, partitionId, localBrokerId)
 
+  //根据给定的副本编号，判断它是不是本地副本
   private def isReplicaLocal(replicaId: Int) : Boolean = replicaId == localBrokerId
+
   val tags = Map("topic" -> topic, "partition" -> partitionId.toString)
 
   newGauge("UnderReplicated",
@@ -76,6 +81,7 @@ class Partition(val topic: String,
     tags
   )
 
+  //验证分区
   def isUnderReplicated(): Boolean = {
     leaderReplicaIfLocal() match {
       case Some(_) =>
@@ -85,9 +91,9 @@ class Partition(val topic: String,
     }
   }
 
-  //todo
+  //根据给定的副本编号获取或创建副本
   def getOrCreateReplica(replicaId: Int = localBrokerId): Replica = {
-    //从assignedReplicaMap中获取查找的Replica对象
+    //获取分区指定编号的副本
     val replicaOpt = getReplica(replicaId)
     replicaOpt match {
       //查找到指定的replica对象，直接返回
@@ -96,8 +102,7 @@ class Partition(val topic: String,
       case None =>
         //判断是否为本地副本
         if (isReplicaLocal(replicaId)) {
-          val config = LogConfig.fromProps(logManager.defaultConfig.originals,
-                                           AdminUtils.fetchEntityConfig(zkUtils, ConfigType.Topic, topic))
+          val config = LogConfig.fromProps(logManager.defaultConfig.originals, AdminUtils.fetchEntityConfig(zkUtils, ConfigType.Topic, topic))
           //创建local replica 对应的log对象
           val log: Log = logManager.createLog(TopicAndPartition(topic, partitionId), config)
           //获取指定log目录对应的OffsetCheckpoint对象，它负责管理该log目录下的 replication-offset-checkpoint 文件
@@ -121,15 +126,24 @@ class Partition(val topic: String,
     }
   }
 
+  //broker  localBrokerId leaderReplica leaderReplicaIfLocal  getReplica
+  //1         1             2               None              Some(Replica(1))
+  //2         2             2               Some(Replica(2))  Some(Replica(2))
+  //3         3             2               None              Some(Replica(3))
+
+  //获取分区指定编号的副本，默认是当前broker对应的编号
   def getReplica(replicaId: Int = localBrokerId): Option[Replica] = {
     val replica = assignedReplicaMap.get(replicaId)
-    if (replica == null)
+    if (replica == null) {
       None
-    else
+    } else {
       Some(replica)
+    }
   }
 
+  //获取分区的主副本，并且必须是本地副本，如果不是本地副本返回None,只有主副本才有数据
   def leaderReplicaIfLocal(): Option[Replica] = {
+    //leaderReplicaIdOpt 该分区leader副本的id
     leaderReplicaIdOpt match {
       case Some(leaderReplicaId) =>
         if (leaderReplicaId == localBrokerId)
@@ -256,12 +270,13 @@ class Partition(val topic: String,
   /**
    * Update the log end offset of a certain replica of this partition
    */
+  //1 更新备份副本的偏移量 2 可能扩张ISR集合
   def updateReplicaLogReadResult(replicaId: Int, logReadResult: LogReadResult) {
     getReplica(replicaId) match {
       case Some(replica) =>
-        //更新每个分区的备份副本
+        //更新备份副本的偏移量
         replica.updateLogReadResult(logReadResult)
-        //可能扩张
+        //可能扩张ISR集合
         maybeExpandIsr(replicaId)
         debug("Recorded replica %d log end offset (LEO) position %d for partition %s."
           .format(replicaId, logReadResult.info.fetchOffsetMetadata.messageOffset, TopicAndPartition(topic, partitionId)))
@@ -290,9 +305,10 @@ class Partition(val topic: String,
           val replica : Replica = getReplica(replicaId).get
           //leader的HW
           val leaderHW : LogOffsetMetadata = leaderReplica.highWatermark
-          //TODO 1 follower副本不在ISR中，
-          // 2 AR能找到follower
-          // 3 follower 追上 leader HW
+          //TODO 3个要求
+          // 1 follower副本不在ISR中，
+          // 2 follower副本在AR中
+          // 3 follower副本追上leader副本 HW
           if(!inSyncReplicas.contains(replica) &&
              assignedReplicas.map(_.brokerId).contains(replicaId) &&
                   replica.logEndOffset.offsetDiff(leaderHW) >= 0) {
@@ -305,15 +321,17 @@ class Partition(val topic: String,
             updateIsr(newInSyncReplicas)
             replicaManager.isrExpandRate.mark()
           }
-          //TODO 尝试更新HW
+          //TODO 尝试更新Leader的HW
           maybeIncrementLeaderHW(leaderReplica)
         case None => false // nothing to do if no longer leader
       }
     }
 
     // some delayed operations may be unblocked after HW changed
-    if (leaderHWIncremented)
+    if (leaderHWIncremented) {
+      //尝试完成延迟的操作
       tryCompleteDelayedRequests()
+    }
   }
 
   /*
@@ -375,12 +393,12 @@ class Partition(val topic: String,
    */
   //尝试后移leader副本的HW,当ISR集合发生增或减或是ISR集合任一副本LEO发生变化，都有可能导致ISR集合中最新的leo变大
   private def maybeIncrementLeaderHW(leaderReplica: Replica): Boolean = {
-    //获取ISR集合中所有的副本LEO
+    //获取ISR集合中所有LEO
     val allLogEndOffsets = inSyncReplicas.map(_.logEndOffset)
     //将ISR集合中最小的LEO作为HW
-    val newHighWatermark = allLogEndOffsets.min(new LogOffsetMetadata.OffsetOrdering)
+    val newHighWatermark: LogOffsetMetadata = allLogEndOffsets.min(new LogOffsetMetadata.OffsetOrdering)
     //获取当前的hw
-    val oldHighWatermark = leaderReplica.highWatermark
+    val oldHighWatermark : LogOffsetMetadata = leaderReplica.highWatermark
     if (oldHighWatermark.messageOffset < newHighWatermark.messageOffset || oldHighWatermark.onOlderSegment(newHighWatermark)) {
       //更新HW
       leaderReplica.highWatermark = newHighWatermark
