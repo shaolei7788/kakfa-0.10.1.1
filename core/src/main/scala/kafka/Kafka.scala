@@ -36,16 +36,12 @@ object Kafka extends Logging {
     if (args.length == 0) {
       CommandLineUtils.printUsageAndDie(optionParser, "USAGE: java [options] %s server.properties [--override property=value]*".format(classOf[KafkaServer].getSimpleName()))
     }
-
     val props = Utils.loadProps(args(0))
-
     if(args.length > 1) {
       val options = optionParser.parse(args.slice(1, args.length): _*)
-
       if(options.nonOptionArguments().size() > 0) {
         CommandLineUtils.printUsageAndDie(optionParser, "Found non argument parameters: " + options.nonOptionArguments().toArray.mkString(","))
       }
-
       props.putAll(CommandLineUtils.parseKeyValueArgs(options.valuesOf(overrideOpt)))
     }
     props
