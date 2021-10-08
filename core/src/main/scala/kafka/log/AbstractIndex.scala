@@ -240,13 +240,17 @@ abstract class AbstractIndex[K, V](@volatile private[this] var _file: File, val 
    * @param target The index key to look for
    * @return The slot found or -1 if the least entry in the index is larger than the target key or the index is empty
    */
+
   protected def indexSlotFor(idx: ByteBuffer, target: Long, searchEntity: IndexSearchEntity): Int = {
-    // check if the index is empty
+    //检测索引文件没有条目
     if(_entries == 0)
       return -1
 
     // check if the target offset is smaller than the least offset
-    if(compareIndexEntry(parseEntry(idx, 0), target, searchEntity) > 0)
+    //获取idx位置为0位置的 (绝对偏移量，物理位置)
+    val indexEntry : IndexEntry = parseEntry(idx, 0)
+    // 如果索引条目最小的偏移量都比目标偏移量要大，说明不在这个索引文件里
+    if(compareIndexEntry(indexEntry, target, searchEntity) > 0)
       return -1
     // binary search for the entry
     var lo = 0

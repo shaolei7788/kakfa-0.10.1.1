@@ -85,6 +85,7 @@ class OffsetIndex(file: File, baseOffset: Long, maxIndexSize: Int = -1)
    *         If the target offset is smaller than the least entry in the index (or the index is empty),
    *         the pair (baseOffset, 0) is returned.
    */
+  //索引文件中每个索引条目占8字节，相对偏移量 物理位置各占4字节，在查找过程中需要读取偏移量的值和目标偏移量进行对比
   def lookup(targetOffset: Long): OffsetPosition = {
     maybeLock(lock) {
       //查询时mmp会发生变化，所以先复制出来
@@ -100,8 +101,10 @@ class OffsetIndex(file: File, baseOffset: Long, maxIndexSize: Int = -1)
     }
   }
 
+  // relativeOffset 根据索引编号快速定位到偏移量的位置，然后读取这个索引条目的偏移量 entrySize = 8
   private def relativeOffset(buffer: ByteBuffer, n: Int): Int = buffer.getInt(n * entrySize)
 
+  //会根据索引编号快速定位到物理位置，然后读取这个索引条目的物理位置
   private def physical(buffer: ByteBuffer, n: Int): Int = buffer.getInt(n * entrySize + 4)
 
   override def parseEntry(buffer: ByteBuffer, n: Int): IndexEntry = {
