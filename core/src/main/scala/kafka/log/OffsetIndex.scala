@@ -86,6 +86,7 @@ class OffsetIndex(file: File, baseOffset: Long, maxIndexSize: Int = -1)
    *         the pair (baseOffset, 0) is returned.
    */
   //索引文件中每个索引条目占8字节，相对偏移量 物理位置各占4字节，在查找过程中需要读取偏移量的值和目标偏移量进行对比
+  // lookup 返回的OffsetPosition （绝对偏移量,物理位置）
   def lookup(targetOffset: Long): OffsetPosition = {
     maybeLock(lock) {
       //查询时mmp会发生变化，所以先复制出来
@@ -135,7 +136,7 @@ class OffsetIndex(file: File, baseOffset: Long, maxIndexSize: Int = -1)
       require(!isFull, "Attempt to append to a full index (size = " + _entries + ").")
       if (_entries == 0 || offset > _lastOffset) {
         debug("Adding index entry %d => %d to %s.".format(offset, position, file.getName))
-        //todo offset - baseOffset 相对偏移量
+        //todo offset - baseOffset 相对偏移量  索引项第一条数据偏移量是0
         mmap.putInt((offset - baseOffset).toInt)
         //todo position 是物理地址
         mmap.putInt(position)
