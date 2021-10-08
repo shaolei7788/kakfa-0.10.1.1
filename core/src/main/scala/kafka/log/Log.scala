@@ -83,7 +83,7 @@ case class LogAppendInfo(var firstOffset: Long,
  */
 @threadsafe
 //Log 代表一个分区的目录
-class Log(val dir: File,//Log对应的磁盘文件
+class Log(val dir: File,//Log对应的磁盘文件 dir = /opt/module/logs/first-0
           @volatile var config: LogConfig,//Log相关的配置信息
           //指定恢复操作的起始offset,recoveryPoint之前的Message都已刷到磁盘上持久存储
           //而其之后的消息则不一定，出现宕机可能会丢失，所以只需要恢复recoveryPoint之后的消息即可
@@ -158,8 +158,7 @@ class Log(val dir: File,//Log对应的磁盘文件
     dir.mkdirs()
     var swapFiles = Set[File]()
 
-    // first do a pass through the files in the log directory and remove any temporary files
-    // and find any interrupted swap operations
+    //将非正常的文件删除
     for(file <- dir.listFiles if file.isFile) {
       if(!file.canRead)
         throw new IOException("Could not read file " + file)
@@ -186,6 +185,7 @@ class Log(val dir: File,//Log对应的磁盘文件
     // now do a second pass and load all the .log and all index files
     for(file <- dir.listFiles if file.isFile) {
       val filename = file.getName
+      //索引文件
       if(filename.endsWith(IndexFileSuffix) || filename.endsWith(TimeIndexFileSuffix)) {
         // if it is an index file, make sure it has a corresponding .log file
         val logFile =
@@ -199,12 +199,14 @@ class Log(val dir: File,//Log对应的磁盘文件
           file.delete()
         }
       } else if(filename.endsWith(LogFileSuffix)) {
+        //日志文件
         // if its a log file, load the corresponding log segment
         val start = filename.substring(0, filename.length - LogFileSuffix.length).toLong
         val indexFile = Log.indexFilename(dir, start)
         val timeIndexFile = Log.timeIndexFilename(dir, start)
 
         val indexFileExists = indexFile.exists()
+        //创建LogSegment对象
         val segment = new LogSegment(dir = dir,
                                      startOffset = start,
                                      indexIntervalBytes = config.indexInterval,
@@ -229,7 +231,6 @@ class Log(val dir: File,//Log对应的磁盘文件
           error("Could not find index file corresponding to log file %s, rebuilding index...".format(segment.log.file.getAbsolutePath))
           segment.recover(config.maxMessageSize)
         }
-
         segments.put(start, segment)
       }
     }
@@ -437,9 +438,10 @@ class Log(val dir: File,//Log对应的磁盘文件
 
         trace("Appended message set to log %s with first offset: %d, next offset: %d, and messages: %s"
           .format(this.name, appendInfo.firstOffset, nextOffsetMetadata.messageOffset, validMessages))
-        //检测未刷到磁盘的数据是否达到一定的阈值，如果是调用flush方法刷新
+        //unflushedMessages 未刷新消息的数量 检测未刷到磁盘的数据是否达到一定的阈值，如果是调用flush方法刷新
+        // unflushedMessages = 最新偏移量 - 检查点位置
         if (unflushedMessages >= config.flushInterval)
-          //todo 用于不会执行此操作 由操作系统刷到磁盘
+          //todo flushInterval 可配置 如果不配置不会执行此操作 由操作系统刷到磁盘
           flush()
 
         appendInfo
@@ -554,10 +556,12 @@ class Log(val dir: File,//Log对应的磁盘文件
    * @throws OffsetOutOfRangeException If startOffset is beyond the log end offset or before the base offset of the first segment.
    * @return The fetch data information including fetch starting offset metadata and messages read.
    */
+  //todo offset = 起始偏移量 adjustedFetchSize = 拉取的字节长度   maxOffsetOpt = 读取消息的上限即最大偏移量
   def read(startOffset: Long, maxLength: Int, maxOffset: Option[Long] = None, minOneMessage: Boolean = false): FetchDataInfo = {
     trace("Reading %d bytes from offset %d in log %s of length %d bytes".format(maxLength, startOffset, name, size))
     //将nextOffsetMetadata 保存成局部变量 记录了Log中最后一个offset值
     val currentNextOffsetMetadata = nextOffsetMetadata
+    //LEO
     val next = currentNextOffsetMetadata.messageOffset
     if(startOffset == next)
       return FetchDataInfo(currentNextOffsetMetadata, MessageSet.Empty)
@@ -599,7 +603,7 @@ class Log(val dir: File,//Log对应的磁盘文件
       // maxPosition 最大物理位置
       val fetchInfo = entry.getValue.read(startOffset, maxOffset, maxLength, maxPosition, minOneMessage)
       if(fetchInfo == null) {
-        //在此Logsegment中没读到数据，则继续读取下一个Logsegment
+        //在此Logsegment中没读到数据，则继续读取下更高的Logsegment
         entry = segments.higherEntry(entry.getKey)
       } else {
         return fetchInfo
@@ -867,6 +871,7 @@ class Log(val dir: File,//Log对应的磁盘文件
   /**
    * The number of messages appended to the log since the last flush
    */
+  //最新偏移量 - 检查点位置
   def unflushedMessages() = this.logEndOffset - this.recoveryPoint
 
   /**
@@ -876,22 +881,27 @@ class Log(val dir: File,//Log对应的磁盘文件
 
   /**
    * Flush log segments for all offsets up to offset-1
-   *
    * @param offset The offset to flush up to (non-inclusive); the new recovery point
    */
+  //todo 执行刷新操作
+  // 消息追加到日志中，有两种场景会发送刷新日志的动作
+  // 新创建一个日志分段，立即刷新旧的日志分段
+  // 日志中未刷新的消息数量超过log.flush.interval.message的配置项
   def flush(offset: Long) : Unit = {
     if (offset <= this.recoveryPoint)
       return
     debug("Flushing log '" + name + " up to offset " + offset + ", last flushed: " + lastFlushTime + " current time: " +
           time.milliseconds + " unflushed = " + unflushedMessages)
     //找到recoveryPoint 和 offset之间的logsegment对象
-    for(segment <- logSegments(this.recoveryPoint, offset))
+    for(segment <- logSegments(this.recoveryPoint, offset)) {
       //todo LogSegment#flush 会调用日志文件索引文件的flush方法，最终调用操作系统的fsync命令刷新磁盘，保证数据持久化
       segment.flush()
+    }
     lock synchronized {
       if(offset > this.recoveryPoint) {
         //后移recoveryPoint
         this.recoveryPoint = offset
+        //更新最近的刷新时间
         lastflushedTime.set(time.milliseconds)
       }
     }
@@ -1010,7 +1020,9 @@ class Log(val dir: File,//Log对应的磁盘文件
   private def deleteSegment(segment: LogSegment) {
     info("Scheduling log segment %d for log %s for deletion.".format(segment.baseOffset, name))
     lock synchronized {
+      //从segments中移除该segment
       segments.remove(segment.baseOffset)
+      //异步删除日志分段
       asyncDeleteSegment(segment)
     }
   }
@@ -1021,9 +1033,11 @@ class Log(val dir: File,//Log对应的磁盘文件
    * @throws KafkaStorageException if the file can't be renamed and still exists
    */
   private def asyncDeleteSegment(segment: LogSegment) {
+    //将日志分段的文件名 添加上 .deleted后缀
     segment.changeFileSuffixes("", Log.DeletedFileSuffix)
     def deleteSeg() {
       info("Deleting segment %d from log %s.".format(segment.baseOffset, name))
+      //执行删除操作
       segment.delete()
     }
     scheduler.schedule("delete-file", deleteSeg, delay = config.fileDeleteDelayMs)

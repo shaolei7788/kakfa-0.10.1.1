@@ -92,6 +92,7 @@ class Partition(val topic: String,
     replicaOpt match {
       //查找到指定的replica对象，直接返回
       case Some(replica) => replica
+      //没查找到指定的replica对象，则创建一个
       case None =>
         //判断是否为本地副本
         if (isReplicaLocal(replicaId)) {
@@ -100,6 +101,7 @@ class Partition(val topic: String,
           //创建local replica 对应的log对象
           val log: Log = logManager.createLog(TopicAndPartition(topic, partitionId), config)
           //获取指定log目录对应的OffsetCheckpoint对象，它负责管理该log目录下的 replication-offset-checkpoint 文件
+          //log.dir是日志目录  log.dir.getParentFile 是数据目录
           val checkpoint = replicaManager.highWatermarkCheckpoints(log.dir.getParentFile.getAbsolutePath)
           //读取replication-offset-checkpoint文件形成map
           val offsetMap = checkpoint.read
@@ -111,6 +113,7 @@ class Partition(val topic: String,
           val localReplica = new Replica(replicaId, this, time, offset, Some(log))
           addReplicaIfNotExists(localReplica)
         } else {
+          //远程副本
           val remoteReplica = new Replica(replicaId, this, time)
           addReplicaIfNotExists(remoteReplica)
         }
@@ -130,6 +133,7 @@ class Partition(val topic: String,
     leaderReplicaIdOpt match {
       case Some(leaderReplicaId) =>
         if (leaderReplicaId == localBrokerId)
+          //获取副本
           getReplica(localBrokerId)
         else
           None
@@ -255,12 +259,12 @@ class Partition(val topic: String,
   def updateReplicaLogReadResult(replicaId: Int, logReadResult: LogReadResult) {
     getReplica(replicaId) match {
       case Some(replica) =>
+        //更新每个分区的备份副本
         replica.updateLogReadResult(logReadResult)
         //可能扩张
         maybeExpandIsr(replicaId)
         debug("Recorded replica %d log end offset (LEO) position %d for partition %s."
-          .format(replicaId, logReadResult.info.fetchOffsetMetadata.messageOffset,
-                  TopicAndPartition(topic, partitionId)))
+          .format(replicaId, logReadResult.info.fetchOffsetMetadata.messageOffset, TopicAndPartition(topic, partitionId)))
       case None =>
         throw new NotAssignedReplicaException(("Leader %d failed to record follower %d's position %d since the replica" +
           " is not recognized to be one of the assigned replicas %s for partition %s.")
@@ -464,7 +468,6 @@ class Partition(val topic: String,
           val minIsr = log.config.minInSyncReplicas
           //正在同步的isr大小
           val inSyncSize = inSyncReplicas.size
-
           // Avoid writing to leader if there are not enough insync replicas to make it safe
           if (inSyncSize < minIsr && requiredAcks == -1) {
             throw new NotEnoughReplicasException("Number of insync replicas for partition [%s,%d] is [%d], below required minimum [%d]"
@@ -473,6 +476,7 @@ class Partition(val topic: String,
           //todo Log#append
           val info = log.append(messages, assignOffsets = true)
           // probably unblock some follower fetch requests since log end offset has been updated
+          //todo 尝试完成延迟的拉取
           replicaManager.tryCompleteDelayedFetch(TopicPartitionOperationKey(this.topic, this.partitionId))
           // we may need to increment high watermark since ISR could be down to 1
           (info, maybeIncrementLeaderHW(leaderReplica))

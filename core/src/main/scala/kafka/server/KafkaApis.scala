@@ -51,11 +51,12 @@ import scala.collection.JavaConverters._
 /**
  * Logic to handle the various Kafka requests
  */
-class KafkaApis(val requestChannel: RequestChannel,
-                val replicaManager: ReplicaManager,
+//是服务端处理所有请求的入口
+class KafkaApis(val requestChannel: RequestChannel,//请求通道
+                val replicaManager: ReplicaManager,//
                 val adminManager: AdminManager,
-                val coordinator: GroupCoordinator,
-                val controller: KafkaController,
+                val coordinator: GroupCoordinator,//协调者
+                val controller: KafkaController,//控制器
                 val zkUtils: ZkUtils,
                 val brokerId: Int,
                 val config: KafkaConfig,
@@ -448,7 +449,6 @@ class KafkaApis(val requestChannel: RequestChannel,
       //todo 正常走这里  internalTopicsAllowed 判断是否是内部topic  内部topic 就是__consumer_offset
       // 我们自己创建的topic 为false
       val internalTopicsAllowed = request.header.clientId == AdminUtils.AdminClientId
-
       // Convert ByteBuffer to ByteBufferMessageSet
       //todo 每个分区的消息  key = TopicPartition value = ByteBufferMessageSet
       val authorizedMessagesPerPartition = authorizedRequestInfo.map {
@@ -459,14 +459,14 @@ class KafkaApis(val requestChannel: RequestChannel,
       //todo ReplicaManager 主要是管理一个broker范围内的Partition
       // 整体流程如下
       // ReplicaManager#appendMessages -> ReplicaManager#appendToLocalLog
-      // -> Partition#appendMessagesToLeader -> Log#append -> #LogSegment#append
-      // -> FileMessageSet#append
+      // -> Partition#appendMessagesToLeader -> leaderReplica = leaderReplicaIfLocal (获取leader副本)
+      // -> leaderReplica.Log#append -> #LogSegment#append -> FileMessageSet#append
       replicaManager.appendMessages(
-        produceRequest.timeout.toLong,
-        produceRequest.acks,
-        internalTopicsAllowed,
-        authorizedMessagesPerPartition,
-        sendResponseCallback)
+        produceRequest.timeout.toLong,//应答超时时间
+        produceRequest.acks,//是否需要答应
+        internalTopicsAllowed,//
+        authorizedMessagesPerPartition,//生产者请求发送的分区及对应的消息集
+        sendResponseCallback) //发送生产响应结果的回调方法
 
       // if the request is put into the purgatory, it will have a held reference
       // and hence cannot be garbage collected; hence we clear its data here in
@@ -563,10 +563,10 @@ class KafkaApis(val requestChannel: RequestChannel,
       //todo
       // call the replica manager to fetch messages from the local replica
       replicaManager.fetchMessages(
-        fetchRequest.maxWait.toLong,
-        fetchRequest.replicaId,
-        fetchRequest.minBytes,
-        fetchRequest.maxBytes,
+        fetchRequest.maxWait.toLong,//最长等待时间
+        fetchRequest.replicaId,//备份副本编号，消费者没有该编号
+        fetchRequest.minBytes,//拉取请求设置的最小拉取字节
+        fetchRequest.maxBytes,//拉取请求设置的最大拉取字节
         fetchRequest.versionId <= 2,
         authorizedRequestInfo,
         replicationQuota(fetchRequest),

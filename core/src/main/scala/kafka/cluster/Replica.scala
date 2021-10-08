@@ -53,10 +53,6 @@ class Replica(val brokerId: Int,
 
   def updateLogReadResult(logReadResult : LogReadResult) {
     logEndOffset = logReadResult.info.fetchOffsetMetadata
-    /* If the request read up to the log end offset snapshot when the read was initiated,
-     * set the lastCaughtUpTimeMsUnderlying to the current time.
-     * This means that the replica is fully caught up.
-     */
     //代表读到最后了
     if(logReadResult.isReadFromLogEnd) {
       lastCaughtUpTimeMsUnderlying.set(time.milliseconds)

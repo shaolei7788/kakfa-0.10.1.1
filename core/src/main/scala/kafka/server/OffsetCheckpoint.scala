@@ -35,6 +35,12 @@ object OffsetCheckpoint {
  * This class saves out a map of topic/partition=>offsets to a file
  */
 //replication-offset-checkpoint文件 记录了data目录下每个partition的hw
+//0              版本
+//3              分区的数量
+//frist  0 0     主题为frist,分区编号为0，偏移量为 0
+//frist  1 2     主题为frist,分区编号为1，偏移量为 0
+//second 2 5     主题为second,分区编号为2，偏移量为 5
+
 class OffsetCheckpoint(val file: File) extends Logging {
   import OffsetCheckpoint._
   private val path = file.toPath.toAbsolutePath
