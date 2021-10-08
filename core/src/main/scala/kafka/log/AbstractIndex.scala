@@ -248,7 +248,6 @@ abstract class AbstractIndex[K, V](@volatile private[this] var _file: File, val 
     // check if the target offset is smaller than the least offset
     if(compareIndexEntry(parseEntry(idx, 0), target, searchEntity) > 0)
       return -1
-
     // binary search for the entry
     var lo = 0
     var hi = _entries - 1
