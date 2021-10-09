@@ -270,6 +270,7 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
           else
             (protocol, endpoint)
         }
+        //todo 创建kafka健康检查对象，会在zk上注册broker信息
         kafkaHealthcheck = new KafkaHealthcheck(config.brokerId, listeners, zkUtils, config.rack,
           config.interBrokerProtocolVersion)
         kafkaHealthcheck.startup()
@@ -280,6 +281,7 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
         /* register broker metrics */
         registerStats()
 
+        //正常启动
         brokerState.newState(RunningAsBroker)
         shutdownLatch = new CountDownLatch(1)
         startupComplete.set(true)

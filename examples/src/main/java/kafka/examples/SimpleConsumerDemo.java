@@ -41,20 +41,10 @@ public class SimpleConsumerDemo {
         }
     }
 
-    private static void generateData() {
-        Producer producer2 = new Producer(KafkaProperties.TOPIC2, false);
-        producer2.start();
-        Producer producer3 = new Producer(KafkaProperties.TOPIC3, false);
-        producer3.start();
-        try {
-            Thread.sleep(1000);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-    }
+
 
     public static void main(String[] args) throws Exception {
-        generateData();
+
 
         SimpleConsumer simpleConsumer = new SimpleConsumer(KafkaProperties.KAFKA_SERVER_URL,
             KafkaProperties.KAFKA_SERVER_PORT,

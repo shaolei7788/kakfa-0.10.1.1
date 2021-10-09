@@ -91,8 +91,7 @@ class ZookeeperLeaderElector(controllerContext: ControllerContext,
     } catch {
       case e: ZkNodeExistsException =>
         // If someone else has written the path, then
-        leaderId = getControllerID 
-
+        leaderId = getControllerID
         if (leaderId != -1)
           debug("Broker %d was elected as leader instead of broker %d".format(leaderId, brokerId))
         else

@@ -345,16 +345,20 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
   //副本如果存活，状态是上线，如果不存活状态为 删除失败
   private def initializeReplicaState() {
     for((topicPartition, assignedReplicas) <- controllerContext.partitionReplicaAssignment) {
+      // topicPartition 主题分区
+      // assignedReplicas 主题分区对应的副本编号集合
       val topic = topicPartition.topic
       val partition = topicPartition.partition
       //AR
       assignedReplicas.foreach { replicaId =>
+        //创建样例类
         val partitionAndReplica = PartitionAndReplica(topic, partition, replicaId)
+        //todo  服务刚启动 controllerContext.liveBrokerIds 为空  给所有的分区副本状态设置为 ReplicaDeletionIneligible
         if (controllerContext.liveBrokerIds.contains(replicaId)) {
           //todo 副本如果存活，状态是上线
           replicaState.put(partitionAndReplica, OnlineReplica)
         } else {
-          //todo 如果不存活状态为 删除失败
+          //todo 如果不存活状态为 删除失败   Ineligible 不合格的意思
           replicaState.put(partitionAndReplica, ReplicaDeletionIneligible)
         }
       }

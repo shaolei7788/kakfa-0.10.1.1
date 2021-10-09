@@ -60,7 +60,7 @@ class ControllerContext(val zkUtils: ZkUtils,
   var epochZkVersion: Int = KafkaController.InitialControllerEpochZkVersion - 1
   //整个集群的topic
   var allTopics: Set[String] = Set.empty
-  //记录了每个分区的AR集合
+  //记录了每个分区的AR集合   initializeControllerContext 方法会赋值一次
   var partitionReplicaAssignment: mutable.Map[TopicAndPartition, Seq[Int]] = mutable.Map.empty
   //记录了每个分区的   leader副本所在的brokerid ISR集合 以及epoch等信息
   var partitionLeadershipInfo: mutable.Map[TopicAndPartition, LeaderIsrAndControllerEpoch] = mutable.Map.empty
@@ -338,7 +338,7 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
     }
   }
 
-  // todo
+  // todo 代理节点变成leader时，会调用
   def onControllerFailover() {
     if(isRunning) {
       info("Broker %d starting become controller state transition".format(config.brokerId))
@@ -356,13 +356,14 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
       partitionStateMachine.registerListeners()
       //todo 注册更改代理节点的状态器 /brokers/ids
       replicaStateMachine.registerListeners()
-      //todo 1 初始化控制器上下文 2 启动通道管理器
+      //todo 1 初始化控制器上下文 2 从zk读取数据 获取topic  3 读取zk数据更新分区leader缓存信息 4 启动通道管理器
       initializeControllerContext()
 
       //启动两个状态机
+      // 初始化副本状态 副本如果存活，状态是上线，如果不存活状态为 删除失败
       replicaStateMachine.startup()
       partitionStateMachine.startup()
-      //todo 注册分区更改监听器
+      //todo 给所有分区注册 分区数据修改监听器  /brokers/topics/first  {"version":1,"partitions":{"2":[0,2],"1":[2,1],"0":[1,0]}}
       controllerContext.allTopics.foreach(topic => partitionStateMachine.registerPartitionChangeListener(topic))
       info("Broker %d is ready to serve as the new controller with epoch %d".format(config.brokerId, epoch))
       //可能触发分区重新分配
@@ -772,13 +773,15 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
 
   private def initializeControllerContext() {
     // update controller cache with delete topic information
-    //
     controllerContext.liveBrokers = zkUtils.getAllBrokersInCluster().toSet
+    //从zk读取数据 获取topic       (first,second)
     controllerContext.allTopics = zkUtils.getAllTopics().toSet
+    //有个赋值操作 从zk读取数据 TopicAndPartition, Seq[Int]  key = first-0   value = (0,1,2) 副本编号集合
     controllerContext.partitionReplicaAssignment = zkUtils.getReplicaAssignmentForTopics(controllerContext.allTopics.toSeq)
     controllerContext.partitionLeadershipInfo = new mutable.HashMap[TopicAndPartition, LeaderIsrAndControllerEpoch]
     controllerContext.shuttingDownBrokerIds = mutable.Set.empty[Int]
     // update the leader and isr cache for all existing partitions from Zookeeper
+    // 会从zk读取主题分区的leader信息 服务刚启动是没有leader信息
     updateLeaderAndIsrCache()
     // start the channel manager
     //todo 启动通道管理器 建立到集群各个broker的网络连接
@@ -843,6 +846,7 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
     info("List of topics to be deleted: %s".format(topicsQueuedForDeletion.mkString(",")))
     info("List of topics ineligible for deletion: %s".format(topicsIneligibleForDeletion.mkString(",")))
     // initialize the topic deletion manager
+    // ineligible 不合格的  服务刚重启 topicsIneligibleForDeletion 有所有的主题
     deleteTopicManager = new TopicDeletionManager(this, topicsQueuedForDeletion, topicsIneligibleForDeletion)
   }
 
@@ -862,6 +866,7 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
   }
 
   def updateLeaderAndIsrCache(topicAndPartitions: Set[TopicAndPartition] = controllerContext.partitionReplicaAssignment.keySet) {
+    //会从zk读取主题分区的leader信息 服务刚启动是没有leader信息
     val leaderAndIsrInfo = zkUtils.getPartitionLeaderAndIsrForTopics(zkUtils.zkClient, topicAndPartitions)
     for((topicPartition, leaderIsrAndControllerEpoch) <- leaderAndIsrInfo)
       controllerContext.partitionLeadershipInfo.put(topicPartition, leaderIsrAndControllerEpoch)

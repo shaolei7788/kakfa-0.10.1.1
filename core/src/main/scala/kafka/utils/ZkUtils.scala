@@ -684,6 +684,7 @@ class ZkUtils(val zkClient: ZkClient,
     cluster
   }
 
+  //获取主题分区的leader跟ISR  {"controller_epoch":28,"leader":0,"version":1,"leader_epoch":5,"isr":[0]}
   def getPartitionLeaderAndIsrForTopics(zkClient: ZkClient, topicAndPartitions: Set[TopicAndPartition])
   : mutable.Map[TopicAndPartition, LeaderIsrAndControllerEpoch] = {
     val ret = new mutable.HashMap[TopicAndPartition, LeaderIsrAndControllerEpoch]
@@ -699,14 +700,18 @@ class ZkUtils(val zkClient: ZkClient,
   def getReplicaAssignmentForTopics(topics: Seq[String]): mutable.Map[TopicAndPartition, Seq[Int]] = {
     val ret = new mutable.HashMap[TopicAndPartition, Seq[Int]]
     topics.foreach { topic =>
+      //{"version":1,"partitions":{"0":[0]}}
       val jsonPartitionMapOpt = readDataMaybeNull(getTopicPath(topic))._1
       jsonPartitionMapOpt match {
         case Some(jsonPartitionMap) =>
           Json.parseFull(jsonPartitionMap) match {
             case Some(m) => m.asInstanceOf[Map[String, Any]].get("partitions") match {
               case Some(repl)  =>
+                // replicaMap = {"0":[0]}
                 val replicaMap = repl.asInstanceOf[Map[String, Seq[Int]]]
                 for((partition, replicas) <- replicaMap){
+                  // partition 分区标号
+                  // replicas 是个集合 副本编号 0，一般有多个
                   ret.put(TopicAndPartition(topic, partition.toInt), replicas)
                   debug("Replicas assigned to topic [%s], partition [%s] are [%s]".format(topic, partition, replicas))
                 }

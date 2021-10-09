@@ -66,7 +66,7 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
     initializePartitionState()
     // set started flag
     hasStarted.set(true)
-    // 尝试将分区状态转换为OnlinePartition
+    // 尝试将分区状态转换为OnlinePartition 不一定能成功  假设其它broker都挂了 本broker刚启动 本次尝试就会上线失败
     triggerOnlinePartitionStateChange()
 
     info("Started partition state machine with initial state -> " + partitionState.toString())
@@ -119,9 +119,11 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
       // that belong to topics to be deleted
       for((topicAndPartition, partitionState) <- partitionState
           if !controller.deleteTopicManager.isTopicQueuedUpForDeletion(topicAndPartition.topic)) {
-        if(partitionState.equals(OfflinePartition) || partitionState.equals(NewPartition))
+        if(partitionState.equals(OfflinePartition) || partitionState.equals(NewPartition)) {
+          //todo 处理分区
           handleStateChange(topicAndPartition.topic, topicAndPartition.partition, OnlinePartition, controller.offlinePartitionSelector,
                             (new CallbackBuilder).build)
+        }
       }
       brokerRequestBatch.sendRequestsToBrokers(controller.epoch)
     } catch {
@@ -227,14 +229,16 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
       // check if leader and isr path exists for partition. If not, then it is in NEW state
       controllerContext.partitionLeadershipInfo.get(topicPartition) match {
         case Some(currentLeaderIsrAndEpoch) =>
-          // 存在leader副本和isr集合的信息
+          // 存在leader副本和isr集合的信息 leader不一定是活的
           if (controllerContext.liveBrokerIds.contains(currentLeaderIsrAndEpoch.leaderAndIsr.leader))
             // leader is alive
             partitionState.put(topicPartition, OnlinePartition)
-          else
+          else {
+            // leader is dead 将topicPartition状态设置为OfflinePartition
             partitionState.put(topicPartition, OfflinePartition)
+          }
         case None =>
-          // 不存在leader副本和isr集合的信息
+          // 不存在leader副本和isr集合的信息 分区状态会设置为NewPartition
           partitionState.put(topicPartition, NewPartition)
       }
     }
@@ -271,7 +275,7 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
       case _ =>
         debug("Live assigned replicas for partition %s are: [%s]".format(topicAndPartition, liveAssignedReplicas))
         // make the first replica in the list of assigned replicas, the leader
-        //AR中存活的第一个
+        //todo AR中存活的第一个作为leader
         val leader = liveAssignedReplicas.head
         // {"controller_epoch":6,"leader":1,"version":1,"leader_epoch":0,"isr":[1,0]}
         val leaderIsrAndControllerEpoch = new LeaderIsrAndControllerEpoch(new LeaderAndIsr(leader, liveAssignedReplicas.toList), controller.epoch)
