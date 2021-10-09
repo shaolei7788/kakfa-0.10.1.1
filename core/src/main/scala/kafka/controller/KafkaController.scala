@@ -1120,6 +1120,7 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
     controllerContext.partitionsUndergoingPreferredReplicaElection --= partitionsToBeRemoved
   }
 
+
   /**
    * Send the leader information for selected partitions to selected brokers so that they can correctly respond to
    * metadata requests
