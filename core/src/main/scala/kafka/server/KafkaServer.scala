@@ -277,7 +277,6 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
 
         // Now that the broker id is successfully registered via KafkaHealthcheck, checkpoint it
         checkpointBrokerId(config.brokerId)
-
         /* register broker metrics */
         registerStats()
 
