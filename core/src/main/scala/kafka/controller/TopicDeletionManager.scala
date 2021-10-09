@@ -203,7 +203,7 @@ class TopicDeletionManager(controller: KafkaController,
    * 3. preferred replica election in progress for some partitions of the topic
    * @param topics Topics that should be marked ineligible for deletion. No op if the topic is was not previously queued up for deletion
    */
-  //标记为无效主题
+  //todo 标记为无效topic
   def markTopicIneligibleForDeletion(topics: Set[String]) {
     if(isDeleteTopicEnabled) {
       val newTopicsToHaltDeletion = topicsToBeDeleted & topics
