@@ -1343,6 +1343,7 @@ class ReassignedPartitionsIsrChangeListener(controller: KafkaController, topic: 
   val zkUtils = controller.controllerContext.zkUtils
   val controllerContext = controller.controllerContext
 
+
   /**
    * Invoked when some partitions need to move leader to preferred replica
    *
