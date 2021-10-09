@@ -148,8 +148,10 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
         // this callback is invoked under the replica state change lock to ensure proper order of
         // leadership changes
         updatedLeaders.foreach { partition =>
-          if (partition.topic == Topic.GroupMetadataTopicName)
+          if (partition.topic == Topic.GroupMetadataTopicName) {
+            //__consumer_offsets
             coordinator.handleGroupImmigration(partition.partitionId)
+          }
         }
         updatedFollowers.foreach { partition =>
           if (partition.topic == Topic.GroupMetadataTopicName)

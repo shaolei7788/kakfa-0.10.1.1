@@ -391,7 +391,7 @@ class Partition(val topic: String,
    * Note There is no need to acquire the leaderIsrUpdate lock here
    * since all callers of this private API acquire that lock
    */
-  //尝试后移leader副本的HW,当ISR集合发生增或减或是ISR集合任一副本LEO发生变化，都有可能导致ISR集合中最新的leo变大
+  //尝试后移leader副本的HW,当ISR集合发生增或减或是ISR集合任一副本LEO发生变化，都有可能导致ISR集合中最新的LEO变大
   private def maybeIncrementLeaderHW(leaderReplica: Replica): Boolean = {
     //获取ISR集合中所有LEO
     val allLogEndOffsets = inSyncReplicas.map(_.logEndOffset)

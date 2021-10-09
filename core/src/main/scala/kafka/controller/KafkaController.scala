@@ -979,6 +979,7 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
 
   private def updateAssignedReplicasForPartition(topicAndPartition: TopicAndPartition,
                                                  replicas: Seq[Int]) {
+    //AR
     val partitionsAndReplicasForThisTopic = controllerContext.partitionReplicaAssignment.filter(_._1.topic.equals(topicAndPartition.topic))
     partitionsAndReplicasForThisTopic.put(topicAndPartition, replicas)
     updateAssignedReplicasForPartition(topicAndPartition, partitionsAndReplicasForThisTopic)
