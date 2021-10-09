@@ -46,6 +46,12 @@ import java.util.concurrent.locks.ReentrantLock
 import kafka.server._
 import kafka.common.TopicAndPartition
 
+// 控制器上下文保存了上一次的数据，而zk保存了最新的数据，两者数据会不一致
+// ZK节点关联的监听器出发事件处理时，监听器要对比ZK节点和上下文，找出新增和删除的数据，步骤如下
+// ZK节点最新数据 - 控制器上下文 = 表示要新增的数据
+// 控制器上下文 - ZK节点最新数据 = 表示需要删除的数据
+// 控制器上下文 更新为 ZK节点最新数据
+// 控制器分别处理需要新增和删除数据对应的事件
 class ControllerContext(val zkUtils: ZkUtils,
                         val zkSessionTimeout: Int) {
   //维护了controller leader与集器中其它broker之间的网络连接
@@ -62,6 +68,7 @@ class ControllerContext(val zkUtils: ZkUtils,
   var allTopics: Set[String] = Set.empty
   //记录了每个分区的AR集合   initializeControllerContext 方法会赋值一次
   var partitionReplicaAssignment: mutable.Map[TopicAndPartition, Seq[Int]] = mutable.Map.empty
+
   //记录了每个分区的   leader副本所在的brokerid ISR集合 以及epoch等信息
   var partitionLeadershipInfo: mutable.Map[TopicAndPartition, LeaderIsrAndControllerEpoch] = mutable.Map.empty
   //记录了正在重新分配副本的分区
@@ -180,7 +187,7 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
   private var isRunning = true
   private val stateChangeLogger = KafkaController.stateChangeLogger
 
-  //缓存了zookeeper中记录的整个集器元数据，例如 可用broker,all topic,分区，副本消息  启动控制器时从zk初始化数据
+  //todo 缓存了zookeeper中记录的整个集群元数据，例如 可用broker,all topic,分区，副本消息  启动控制器时从zk初始化数据
   val controllerContext = new ControllerContext(zkUtils, config.zkSessionTimeoutMs)
 
   //用于管理集器中所有partition状态的状态机
@@ -199,7 +206,7 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
   //用于对指定的topic进行删除
   var deleteTopicManager: TopicDeletionManager = null
 
-  // PartitionLeaderSelector 四个选举分区主副本的类
+  //todo PartitionLeaderSelector 四个选举 分区主副本的类
   val offlinePartitionSelector = new OfflinePartitionLeaderSelector(controllerContext, config)
   private val reassignedPartitionLeaderSelector = new ReassignedPartitionLeaderSelector(controllerContext)
   private val preferredReplicaPartitionLeaderSelector = new PreferredReplicaPartitionLeaderSelector(controllerContext)
@@ -357,10 +364,11 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
       //todo 注册更改代理节点的状态器 /brokers/ids
       replicaStateMachine.registerListeners()
       //todo 1 初始化控制器上下文 2 从zk读取数据 获取topic  3 读取zk数据更新分区leader缓存信息 4 启动通道管理器
+      // 会从zk读取集群的所有分区和副本，所有初始化控制器上下文后才可以启动状态机
       initializeControllerContext()
 
-      //启动两个状态机
-      // 初始化副本状态 副本如果存活，状态是上线，如果不存活状态为 删除失败
+      //todo 因为分区有多个副本，只有集群中的所有副本状态都初始化完成，才可以初始化分区的状态，所以控制会先启动副本状态机，然后才启动分区状态机
+      // 启动两个状态机 初始化副本状态 副本如果存活，状态是上线，如果不存活状态为 删除失败
       replicaStateMachine.startup()
       partitionStateMachine.startup()
       //todo 给所有分区注册 分区数据修改监听器  /brokers/topics/first  {"version":1,"partitions":{"2":[0,2],"1":[2,1],"0":[1,0]}}
@@ -368,10 +376,12 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
       info("Broker %d is ready to serve as the new controller with epoch %d".format(config.brokerId, epoch))
       //可能触发分区重新分配
       maybeTriggerPartitionReassignment()
-      //可能触发replica选举
+      //可能触发最优replica选举
       maybeTriggerPreferredReplicaElection()
       /* send partition leadership info to all live brokers */
+      //将分区的主副本和ISR信息发送给所有存货的broker
       sendUpdateMetadataRequest(controllerContext.liveOrShuttingDownBrokerIds.toSeq)
+      //检测是否开启了主副本的自动平衡，如果开启了，启动一个线程检查分区平衡的线程 默认开启
       if (config.autoLeaderRebalanceEnable) {
         info("starting the partition rebalance scheduler")
         //主副本自动平衡
@@ -540,7 +550,10 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
     info("New topic creation callback for %s".format(newPartitions.mkString(",")))
     //todo 给新增加的topic 注册分区改变监听器
     topics.foreach(topic => partitionStateMachine.registerPartitionChangeListener(topic))
-    //todo 核心
+    //todo 将分区的状态从初始的 不存在状态 改为 新建状态
+    //todo 将副本的状态从初始的 不存在状态 改为 新建状态
+    //todo 将分区的状态从 新建状态 改为 上线状态
+    //todo 将副本的状态从 新建状态 改为 上线状态
     onNewPartitionCreation(newPartitions)
   }
 
@@ -552,11 +565,11 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
    */
   def onNewPartitionCreation(newPartitions: Set[TopicAndPartition]) {
     info("New partition creation callback for %s".format(newPartitions.mkString(",")))
-    //将分区状态改为NewPartition
+    //todo 将分区的状态从初始的 不存在状态 改为 NewPartition(新建状态)
     partitionStateMachine.handleStateChanges(newPartitions, NewPartition)
-    // replicasForPartition = 获取指定分区集合的副本
+    //todo 将副本的状态从初始的 不存在状态 改为 NewPartition(新建状态) replicasForPartition 是获取指定分区集合的副本
     replicaStateMachine.handleStateChanges(controllerContext.replicasForPartition(newPartitions), NewReplica)
-    //todo offlinePartitionSelector 分区选择器 分区从新建状态到上线状态并不会用到offlinePartitionSelector
+    //todo offlinePartitionSelector 分区Leader选择器 分区从新建状态到上线状态并不会用到offlinePartitionSelector
     // 只有下线状态(broker挂了)，上线状态(分区有主副本且活着，但是控制器选区其它副本作为leader) 到上线状态
     partitionStateMachine.handleStateChanges(newPartitions, OnlinePartition, offlinePartitionSelector)
     replicaStateMachine.handleStateChanges(controllerContext.replicasForPartition(newPartitions), OnlineReplica)
@@ -712,7 +725,7 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
   def startup() = {
     inLock(controllerContext.controllerLock) {
       info("Controller starting up")
-      //todo 注册session会话超时监听器  SessionExpirationListener#handleNewSession
+      //todo 注册session会话超时监听器  SessionExpirationListener#handleNewSession  会话超时会进行选举
       registerSessionExpirationListener()
       isRunning = true
       //todo ZookeeperLeaderElector#startup 主要用于Controller Leader选举
@@ -1216,11 +1229,14 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
      *
      * @throws Exception On any error.
      */
+    //todo 会话超时重新参与选举
     @throws(classOf[Exception])
     def handleNewSession() {
       info("ZK expired; shut down all controller components and try to re-elect")
       inLock(controllerContext.controllerLock) {
+        //broker被剥夺kafka controller leader时调用
         onControllerResignation()
+        //参与选举
         controllerElector.elect
       }
     }

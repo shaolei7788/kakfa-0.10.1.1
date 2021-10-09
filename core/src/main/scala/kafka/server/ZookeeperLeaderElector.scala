@@ -48,7 +48,7 @@ class ZookeeperLeaderElector(controllerContext: ControllerContext,
   def startup {
     inLock(controllerContext.controllerLock) {
       //todo 选举路径 electionPath = /controller
-      // 注册数据改变监听器 即监听kafka controller leader改变事件
+      // 注册数据改变监听器 即监听kafka controller leader改变事件  /controller 数据改变会进行选举
       controllerContext.zkUtils.zkClient.subscribeDataChanges(electionPath, leaderChangeListener)
       //todo 进行选举
       elect

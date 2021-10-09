@@ -51,8 +51,11 @@ import kafka.utils.CoreUtils._
  * 2. OnlineReplica: 当副本启动，并且是分区副本集的一部分，副本状态为在线，该状态可用收到成为leader副本或成为follower副本请求
  * 3. OfflineReplica: broker宕机后，节点上的所有副本状态为下线
  * 4. NonExistentReplica: 副本被成功删除后，状态为不存在
+ * 5. ReplicaDeletionStarted: 开始删除副本
+ * 6. ReplicaDeletionSuccessful: 成功删除副本
+ * 7. ReplicaDeletionIneligible: 表示副本删除失败
  */
-//todo 用于管理集器中所有replica状态的状态机 保存了所有的副本以及对应的副本状态
+//todo 用于管理集器中所有replica状态的状态机 保存了集群所有的副本以及对应的副本状态
 // 正常流程是 不存在状态 > 新建状态 > 上线状态 > 下线状态
 class ReplicaStateMachine(controller: KafkaController) extends Logging {
   private val controllerContext = controller.controllerContext
@@ -126,7 +129,7 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
         brokerRequestBatch.newBatch()
         //遍历replicas
         replicas.foreach(r => {
-          //todo 处理副本状态改变
+          //todo 处理副本状态改变 将副本的状态改为指定的目标状态
           handleStateChange(r, targetState, callbacks)
         })
         brokerRequestBatch.sendRequestsToBrokers(controller.epoch)
@@ -378,7 +381,8 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
     controllerContext.partitionReplicaAssignment.filter(_._2.contains(brokerId)).keySet.toSeq
   }
 
-  //todo BrokerChangeListener 监听器会读取 /brokers/ids/ 最新的代理节点列表
+  //todo BrokerChangeListener 监听器会读取 /brokers/ids/ 子节点变化事件  即处理broker 上线 下线事件
+  //
   // broker 上线有两种情况 新启动，重新启动，
   // 新启动的broker之前不在集群中，没有分配到任何分区，控制器不会处理分区和副本的状态改变
   // 重新启动的broker之前在集群中，有分配到任何分区，控制器会处理分区和副本的状态改变
@@ -422,7 +426,8 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
                 controller.onBrokerStartup(newBrokerIdsSorted)
               }
               if(deadBrokerIds.nonEmpty) {
-                //todo broker下线 它上面所有副本的状态都会被更改成 下线状态，如果下线的broker有分区主副本，则控制器对没有主副本的分区进行选举
+                //todo broker下线
+                // 它上面所有副本的状态都会被更改成 下线状态，如果下线的broker有分区主副本，则控制器对没有主副本的分区进行选举
                 controller.onBrokerFailure(deadBrokerIdsSorted)
               }
             } catch {

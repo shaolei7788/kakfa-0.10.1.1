@@ -73,6 +73,7 @@ class OfflinePartitionLeaderSelector(controllerContext: ControllerContext, confi
             }
             debug("No broker in ISR is alive for %s. Pick the leader from the alive assigned replicas: %s"
               .format(topicAndPartition, liveAssignedReplicas.mkString(",")))
+            //TODO AR都挂了
             if (liveAssignedReplicas.isEmpty) {
               throw new NoReplicaOnlineException(("No replica for partition " +
                 "%s is alive. Live brokers are: [%s],".format(topicAndPartition, controllerContext.liveBrokerIds)) +
@@ -141,14 +142,19 @@ class ReassignedPartitionLeaderSelector(controllerContext: ControllerContext) ex
  * New isr = current isr;
  * Replicas to receive LeaderAndIsr request = assigned replicas
  */
-//使用最优的副本作为主副本
+//使用最优副本作为主副本 选举分区的第一个副本作为主副本
+// 一旦主副本所在的broker挂了，控制器会为分区选举新的副本，当原来主副本的broker重新上线后，就会出现分区的第一个副本不是主副本的场景
+// 最优副本 的目的是为了平衡分区，kafka分区算法保证了，分区的主副本会均匀分布在所有的broker,
+// 如果频繁出现第一个副本不是主副本的情况，可能某些节点上的分区主副本太集中，对客户端的读写带来影响，分区平衡线程作为一个后台线程，会定时检查最优副本是不是最优副本，
+// 如果不是在重新平衡分区时，控制器将最优的副本作为分区最新的主副本
 class PreferredReplicaPartitionLeaderSelector(controllerContext: ControllerContext) extends PartitionLeaderSelector
 with Logging {
   this.logIdent = "[PreferredReplicaPartitionLeaderSelector]: "
 
   def selectLeader(topicAndPartition: TopicAndPartition, currentLeaderAndIsr: LeaderAndIsr): (LeaderAndIsr, Seq[Int]) = {
+    //AR
     val assignedReplicas = controllerContext.partitionReplicaAssignment(topicAndPartition)
-    //优先的副本
+    //优先的副本  AR的第一个
     val preferredReplica = assignedReplicas.head
     // check if preferred replica is the current leader
     //当前的leader
@@ -160,6 +166,7 @@ with Logging {
       info("Current leader %d for partition %s is not the preferred replica.".format(currentLeader, topicAndPartition) +
         " Trigerring preferred replica leader election")
       // check if preferred replica is not the current leader and is alive and in the isr
+      //todo 判断最优副本是否存活并且在ISR集合
       if (controllerContext.liveBrokerIds.contains(preferredReplica) && currentLeaderAndIsr.isr.contains(preferredReplica)) {
         //preferredReplica存活 并且 在ISR集合中
         (new LeaderAndIsr(preferredReplica, currentLeaderAndIsr.leaderEpoch + 1, currentLeaderAndIsr.isr,

@@ -194,7 +194,7 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
 
         kafkaScheduler.startup()
 
-        //初始化zk
+        //todo 初始化zk  kafka和zk有关的客户端操作使用了zkclinet第三方库
         zkUtils = initZk()
 
         /* Get or create cluster_id */
