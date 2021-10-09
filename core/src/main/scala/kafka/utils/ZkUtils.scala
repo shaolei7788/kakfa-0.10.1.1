@@ -626,6 +626,21 @@ class ZkUtils(val zkClient: ZkClient,
   }
 
   def readDataMaybeNull(path: String): (Option[String], Stat) = {
+    // stat /brokers/ids/0
+    // data = {"jmx_port":-1,"timestamp":"1633738063700","endpoints":["PLAINTEXT://localhost:9092"],"host":"localhost","version":3,"port":9092}
+    /**
+     * cZxid = 0x300000018
+     * ctime = Sat Oct 09 08:07:45 CST 2021
+     * mZxid = 0x300000018
+     * mtime = Sat Oct 09 08:07:45 CST 2021
+     * pZxid = 0x300000018
+     * cversion = 0
+     * dataVersion = 0
+     * aclVersion = 0
+     * ephemeralOwner = 0x37c625f36d30001
+     * dataLength = 129
+     * numChildren = 0
+     */
     val stat = new Stat()
     val dataAndStat = try {
                         (Some(zkClient.readData(path, stat)), stat)

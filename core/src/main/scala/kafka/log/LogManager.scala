@@ -133,9 +133,7 @@ class LogManager(val logDirs: Array[File],//数据目录
       //存在则表示kafka正在经历清理性的停机工作，此时跳过从本文件夹恢复日志
       if (cleanShutdownFile.exists) {
         debug(
-          "Found clean shutdown file. " +
-          "Skipping recovery for all logs in data directory: " +
-          dir.getAbsolutePath)
+          "Found clean shutdown file. " + "Skipping recovery for all logs in data directory: " + dir.getAbsolutePath)
       } else {
         // log recovery itself is being performed by `Log` class during initialization
         brokerState.newState(RecoveringFromUncleanShutdown)

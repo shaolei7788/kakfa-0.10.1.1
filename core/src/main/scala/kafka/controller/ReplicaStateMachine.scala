@@ -58,6 +58,7 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
   private val controllerContext = controller.controllerContext
   private val controllerId = controller.config.brokerId
   private val zkUtils = controllerContext.zkUtils
+  // ([Topic=order,Partition=2,Replica=0],OnlineReplica)
   private val replicaState: mutable.Map[PartitionAndReplica, ReplicaState] = mutable.Map.empty
   private val brokerChangeListener = new BrokerChangeListener()
   private val brokerRequestBatch = new ControllerBrokerRequestBatch(controller)
@@ -221,6 +222,7 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
           assertValidPreviousStates(partitionAndReplica, List(ReplicaDeletionSuccessful), targetState)
           // remove this replica from the assigned replicas list for its partition
           val currentAssignedReplicas = controllerContext.partitionReplicaAssignment(topicAndPartition)
+          //
           controllerContext.partitionReplicaAssignment.put(topicAndPartition, currentAssignedReplicas.filterNot(_ == replicaId))
           replicaState.remove(partitionAndReplica)
           stateChangeLogger.trace("Controller %d epoch %d changed state of replica %d for partition %s from %s to %s"
@@ -232,8 +234,10 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
             case NewReplica =>
               // add this replica to the assigned replicas list for its partition
               val currentAssignedReplicas = controllerContext.partitionReplicaAssignment(topicAndPartition)
-              if(!currentAssignedReplicas.contains(replicaId))
+              if(!currentAssignedReplicas.contains(replicaId)) {
+                // partitionReplicaAssignment 记录了每个分区的AR集合 放入数据
                 controllerContext.partitionReplicaAssignment.put(topicAndPartition, currentAssignedReplicas :+ replicaId)
+              }
               stateChangeLogger.trace("Controller %d epoch %d changed state of replica %d for partition %s from %s to %s"
                                         .format(controllerId, controller.epoch, replicaId, topicAndPartition, currState,
                                                 targetState))
@@ -366,13 +370,17 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
   // 新启动的broker之前不在集群中，没有分配到任何分区，控制器不会处理分区和副本的状态改变
   // 重新启动的broker之前在集群中，有分配到任何分区，控制器会处理分区和副本的状态改变
   class BrokerChangeListener() extends IZkChildListener with Logging {
+
     this.logIdent = "[BrokerChangeListener on Controller " + controller.config.brokerId + "]: "
+
+    //currentBrokerList broker列表
     def handleChildChange(parentPath : String, currentBrokerList : java.util.List[String]) {
       info("Broker change listener fired for path %s with children %s".format(parentPath, currentBrokerList.sorted.mkString(",")))
       inLock(controllerContext.controllerLock) {
         if (hasStarted.get) {
           ControllerStats.leaderElectionTimer.time {
             try {
+              // getBrokerInfo 读取 zk上 /brokers/ids/brokerId 节点的数据  curBrokers = Broker
               val curBrokers  = currentBrokerList.map(_.toInt).toSet.flatMap(zkUtils.getBrokerInfo)
               val curBrokerIds = curBrokers.map(_.id)
               val liveOrShuttingDownBrokerIds = controllerContext.liveOrShuttingDownBrokerIds

@@ -47,8 +47,8 @@ class ZookeeperLeaderElector(controllerContext: ControllerContext,
 
   def startup {
     inLock(controllerContext.controllerLock) {
-      //todo electionPath = /controller
-      //注册数据改变监听器 即监听kafka controller leader改变事件
+      //todo 选举路径 electionPath = /controller
+      // 注册数据改变监听器 即监听kafka controller leader改变事件
       controllerContext.zkUtils.zkClient.subscribeDataChanges(electionPath, leaderChangeListener)
       //todo 进行选举
       elect
@@ -85,7 +85,7 @@ class ZookeeperLeaderElector(controllerContext: ControllerContext,
       zkCheckedEphemeral.create()
       info(brokerId + " successfully elected as leader")
       leaderId = brokerId
-      //todo 代理节点变成leader时，会调用 onBecomingLeader   onControllerFailover
+      //todo 代理节点变成leader时，会调用 onBecomingLeader 是传递进来的方法   onControllerFailover
       //todo 代理节被剥夺leader时，会调用 onResigningAsLeader
       onBecomingLeader()
     } catch {

@@ -192,7 +192,6 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
         //设置broker的状态为 Starting
         brokerState.newState(Starting)
 
-        //
         kafkaScheduler.startup()
 
         //初始化zk

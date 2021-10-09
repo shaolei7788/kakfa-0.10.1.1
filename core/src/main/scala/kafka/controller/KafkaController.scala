@@ -179,17 +179,23 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
   this.logIdent = "[Controller " + config.brokerId + "]: "
   private var isRunning = true
   private val stateChangeLogger = KafkaController.stateChangeLogger
+
   //缓存了zookeeper中记录的整个集器元数据，例如 可用broker,all topic,分区，副本消息  启动控制器时从zk初始化数据
   val controllerContext = new ControllerContext(zkUtils, config.zkSessionTimeoutMs)
+
   //用于管理集器中所有partition状态的状态机
   val partitionStateMachine = new PartitionStateMachine(this)
+
   //用于管理集器中所有replica状态的状态机
   val replicaStateMachine = new ReplicaStateMachine(this)
+
   //主要用于Controller Leader选举
   private val controllerElector = new ZookeeperLeaderElector(controllerContext, ZkUtils.ControllerPath, onControllerFailover,
     onControllerResignation, config.brokerId)
+
   //自动平衡调度器，平衡分区的分布
   private val autoRebalanceScheduler = new KafkaScheduler(1)
+
   //用于对指定的topic进行删除
   var deleteTopicManager: TopicDeletionManager = null
 
@@ -450,6 +456,7 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
     sendUpdateMetadataRequest(controllerContext.liveOrShuttingDownBrokerIds.toSeq)
     // the very first thing to do when a new broker comes up is send it the entire list of partitions that it is
     // supposed to host. Based on that the broker starts the high watermark threads for the input list of partitions
+    // [Topic=order,Partition=2,Replica=0]
     val allReplicasOnNewBrokers = controllerContext.replicasOnBrokers(newBrokersSet)
     //上线节点上的所有副本转换为上线
     replicaStateMachine.handleStateChanges(allReplicasOnNewBrokers, OnlineReplica)
@@ -703,7 +710,7 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
   def startup() = {
     inLock(controllerContext.controllerLock) {
       info("Controller starting up")
-      //todo 注册session会话超时监听器 当KafkaController与zookeeper的连接超时后创建新连接时会触发 SessionExpirationListener#handleNewSession
+      //todo 注册session会话超时监听器  SessionExpirationListener#handleNewSession
       registerSessionExpirationListener()
       isRunning = true
       //todo ZookeeperLeaderElector#startup 主要用于Controller Leader选举
