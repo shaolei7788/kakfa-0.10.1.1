@@ -341,6 +341,7 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
   // todo
   def onControllerFailover() {
     if(isRunning) {
+      print("====================================onControllerFailover")
       info("Broker %d starting become controller state transition".format(config.brokerId))
       //todo 从zk读取 controller epoch
       readControllerEpochFromZookeeper()

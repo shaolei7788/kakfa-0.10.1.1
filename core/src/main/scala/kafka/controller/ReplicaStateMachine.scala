@@ -74,6 +74,7 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
    * Then triggers the OnlineReplica state change for all replicas.
    */
   def startup() {
+    print("====================================startup")
     // 初始化副本状态 副本如果存活，状态是上线，如果不存活状态为 删除失败
     initializeReplicaState()
     // set started flag
