@@ -440,6 +440,7 @@ class ControllerBrokerRequestBatch(controller: KafkaController) extends  Logging
         replicaInfoList.foreach { r =>
           val stopReplicaRequest = new StopReplicaRequest(controllerId, controllerEpoch, r.deletePartition,
             Set(new TopicPartition(r.replica.topic, r.replica.partition)).asJava)
+          //todo 发送 ApiKeys.STOP_REPLICA 请求
           controller.sendRequest(broker, ApiKeys.STOP_REPLICA, None, stopReplicaRequest, r.callback)
         }
       }

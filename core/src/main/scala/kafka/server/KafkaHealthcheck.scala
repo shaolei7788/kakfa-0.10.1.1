@@ -44,10 +44,13 @@ class KafkaHealthcheck(brokerId: Int,
                        interBrokerProtocolVersion: ApiVersion) extends Logging {
 
   private val brokerIdPath = ZkUtils.BrokerIdsPath + "/" + brokerId
+
   private[server] val sessionExpireListener = new SessionExpireListener
 
   def startup() {
+    //注册session过期事件
     zkUtils.zkClient.subscribeStateChanges(sessionExpireListener)
+    //会在zk上注册broker信息
     register()
   }
 
@@ -67,6 +70,7 @@ class KafkaHealthcheck(brokerId: Int,
     // only PLAINTEXT is supported as default
     // if the broker doesn't listen on PLAINTEXT protocol, an empty endpoint will be registered and older clients will be unable to connect
     val plaintextEndpoint = updatedEndpoints.getOrElse(SecurityProtocol.PLAINTEXT, new EndPoint(null,-1,null))
+    //todo 在zk上注册broker信息
     zkUtils.registerBrokerInZk(brokerId, plaintextEndpoint.host, plaintextEndpoint.port, updatedEndpoints, jmxPort, rack,
       interBrokerProtocolVersion)
   }

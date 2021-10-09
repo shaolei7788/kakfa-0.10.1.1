@@ -46,6 +46,12 @@ import java.util.concurrent.locks.ReentrantLock
 import kafka.server._
 import kafka.common.TopicAndPartition
 
+// 控制器上下文保存了上一次的数据，而zk保存了最新的数据，两者数据会不一致
+// ZK节点关联的监听器出发事件处理时，监听器要对比ZK节点和上下文，找出新增和删除的数据，步骤如下
+// ZK节点最新数据 - 控制器上下文 = 表示要新增的数据
+// 控制器上下文 - ZK节点最新数据 = 表示需要删除的数据
+// 控制器上下文 更新为 ZK节点最新数据
+// 控制器分别处理需要新增和删除数据对应的事件
 class ControllerContext(val zkUtils: ZkUtils,
                         val zkSessionTimeout: Int) {
   //维护了controller leader与集器中其它broker之间的网络连接
@@ -60,8 +66,9 @@ class ControllerContext(val zkUtils: ZkUtils,
   var epochZkVersion: Int = KafkaController.InitialControllerEpochZkVersion - 1
   //整个集群的topic
   var allTopics: Set[String] = Set.empty
-  //记录了每个分区的AR集合
+  //记录了每个分区的AR集合   initializeControllerContext 方法会赋值一次
   var partitionReplicaAssignment: mutable.Map[TopicAndPartition, Seq[Int]] = mutable.Map.empty
+
   //记录了每个分区的   leader副本所在的brokerid ISR集合 以及epoch等信息
   var partitionLeadershipInfo: mutable.Map[TopicAndPartition, LeaderIsrAndControllerEpoch] = mutable.Map.empty
   //记录了正在重新分配副本的分区
@@ -180,7 +187,7 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
   private var isRunning = true
   private val stateChangeLogger = KafkaController.stateChangeLogger
 
-  //缓存了zookeeper中记录的整个集器元数据，例如 可用broker,all topic,分区，副本消息  启动控制器时从zk初始化数据
+  //todo 缓存了zookeeper中记录的整个集群元数据，例如 可用broker,all topic,分区，副本消息  启动控制器时从zk初始化数据
   val controllerContext = new ControllerContext(zkUtils, config.zkSessionTimeoutMs)
 
   //用于管理集器中所有partition状态的状态机
@@ -199,7 +206,7 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
   //用于对指定的topic进行删除
   var deleteTopicManager: TopicDeletionManager = null
 
-  // PartitionLeaderSelector 四个选举分区主副本的类
+  //todo PartitionLeaderSelector 四个选举 分区主副本的类
   val offlinePartitionSelector = new OfflinePartitionLeaderSelector(controllerContext, config)
   private val reassignedPartitionLeaderSelector = new ReassignedPartitionLeaderSelector(controllerContext)
   private val preferredReplicaPartitionLeaderSelector = new PreferredReplicaPartitionLeaderSelector(controllerContext)
@@ -338,7 +345,7 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
     }
   }
 
-  // todo
+  // todo 代理节点变成leader时，会调用
   def onControllerFailover() {
     if(isRunning) {
       print("====================================onControllerFailover")
@@ -353,25 +360,34 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
       registerIsrChangeNotificationListener()
       //todo 选举最优的副本作为分区的主副本 监听器
       registerPreferredReplicaElectionListener()
-      //todo 注册更改主题的状态器 /brokers/topics
+      //todo 注册更改主题的状态器 /brokers/topics  有创建 有删除
       partitionStateMachine.registerListeners()
       //todo 注册更改代理节点的状态器 /brokers/ids
       replicaStateMachine.registerListeners()
-      //todo 1 初始化控制器上下文 2 启动通道管理器
+      //todo 1 初始化控制器上下文 2 从zk读取数据 获取topic  3 读取zk数据更新分区leader缓存信息 4 启动通道管理器
+      // 会从zk读取集群的所有分区和副本，所有初始化控制器上下文后才可以启动状态机
       initializeControllerContext()
 
-      //启动两个状态机
+      //todo 因为分区有多个副本，只有集群中的所有副本状态都初始化完成，才可以初始化分区的状态，所以控制会先启动副本状态机，然后才启动分区状态机
+      // 启动两个状态机
+      //初始化副本状态 1 副本如果存活，状态是上线，2 如果不存活状态为 删除失败
       replicaStateMachine.startup()
+      //初始化分区状态
+      // 1 分区有主副本，初始化为上线
+      // 2 分区有主副本，但不存活，初始化为下线
+      // 3 分区没有主副本，初始化为新建
       partitionStateMachine.startup()
-      //todo 注册分区更改监听器
+      //todo 给所有分区注册 分区数据修改监听器  /brokers/topics/first  {"version":1,"partitions":{"2":[0,2],"1":[2,1],"0":[1,0]}}
       controllerContext.allTopics.foreach(topic => partitionStateMachine.registerPartitionChangeListener(topic))
       info("Broker %d is ready to serve as the new controller with epoch %d".format(config.brokerId, epoch))
       //可能触发分区重新分配
       maybeTriggerPartitionReassignment()
-      //可能触发replica选举
+      //可能触发最优replica选举
       maybeTriggerPreferredReplicaElection()
       /* send partition leadership info to all live brokers */
+      //将分区的主副本和ISR信息发送给所有存货的broker
       sendUpdateMetadataRequest(controllerContext.liveOrShuttingDownBrokerIds.toSeq)
+      //检测是否开启了主副本的自动平衡，如果开启了，启动一个线程检查分区平衡的线程 默认开启
       if (config.autoLeaderRebalanceEnable) {
         info("starting the partition rebalance scheduler")
         //主副本自动平衡
@@ -453,15 +469,16 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
   def onBrokerStartup(newBrokers: Seq[Int]) {
     info("New broker startup callback for %s".format(newBrokers.mkString(",")))
     val newBrokersSet = newBrokers.toSet
-    // 发送 更新元数据 请求给所有代理节点，旧节点在这次更新时知道有这些节点加入
+    // 发送 更新元数据 请求给所有代理节点，让旧节点在这次更新时知道有这些节点加入
     sendUpdateMetadataRequest(controllerContext.liveOrShuttingDownBrokerIds.toSeq)
     // the very first thing to do when a new broker comes up is send it the entire list of partitions that it is
     // supposed to host. Based on that the broker starts the high watermark threads for the input list of partitions
     // [Topic=order,Partition=2,Replica=0]
+    // 获取指定broker中保存的所有副本
     val allReplicasOnNewBrokers = controllerContext.replicasOnBrokers(newBrokersSet)
-    //上线节点上的所有副本转换为上线
+    //todo 上线节点上的所有副本转换为上线
     replicaStateMachine.handleStateChanges(allReplicasOnNewBrokers, OnlineReplica)
-    //如果分区状态为新建或下线 则重新选举主副本，并转为上线状态 已经是在线状态则不变
+    //todo 如果分区状态为新建或下线 则重新选举主副本，并转为上线状态 已经是在线状态则不变
     partitionStateMachine.triggerOnlinePartitionStateChange()
     // check if reassignment of some partitions need to be restarted
     //如果重新分配分区的新副本在上线节点中，则重新分配分区
@@ -505,7 +522,7 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
         !deleteTopicManager.isTopicQueuedUpForDeletion(partitionAndLeader._1.topic)).keySet
     //todo 将这些分区的状态从上线状态更改为下线状态  只是更改状态
     partitionStateMachine.handleStateChanges(partitionsWithoutLeader, OfflinePartition)
-    //todo 重新选举分区的主副本，下线状态的分区会转为上线状态
+    //todo 重新选举分区的主副本，将下线状态的分区会转为上线状态
     partitionStateMachine.triggerOnlinePartitionStateChange()
     //todo 获取指定broker中保存的所有副本
     var allReplicasOnDeadBrokers = controllerContext.replicasOnBrokers(deadBrokersSet)
@@ -522,7 +539,7 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
     }
 
     //todo 主副本都没有在下线的broker,通知所有代理节点更新元数据
-    // 如果主副本在下先的broker,在重新选举主副本时，就会发送请求给所有的broker
+    // 如果主副本在下线的broker,在重新选举主副本时，就会发送请求给所有的broker
     if (partitionsWithoutLeader.isEmpty) {
       sendUpdateMetadataRequest(controllerContext.liveOrShuttingDownBrokerIds.toSeq)
     }
@@ -539,7 +556,10 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
     info("New topic creation callback for %s".format(newPartitions.mkString(",")))
     //todo 给新增加的topic 注册分区改变监听器
     topics.foreach(topic => partitionStateMachine.registerPartitionChangeListener(topic))
-    //todo 核心
+    //todo 将分区的状态从初始的 不存在状态 改为 新建状态
+    //todo 将副本的状态从初始的 不存在状态 改为 新建状态
+    //todo 将分区的状态从 新建状态 改为 上线状态
+    //todo 将副本的状态从 新建状态 改为 上线状态
     onNewPartitionCreation(newPartitions)
   }
 
@@ -551,11 +571,11 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
    */
   def onNewPartitionCreation(newPartitions: Set[TopicAndPartition]) {
     info("New partition creation callback for %s".format(newPartitions.mkString(",")))
-    //将分区状态改为NewPartition
+    //todo 将分区的状态从初始的 不存在状态 改为 NewPartition(新建状态)
     partitionStateMachine.handleStateChanges(newPartitions, NewPartition)
-    // replicasForPartition = 获取指定分区集合的副本
+    //todo 将副本的状态从初始的 不存在状态 改为 NewPartition(新建状态) replicasForPartition 是获取指定分区集合的副本
     replicaStateMachine.handleStateChanges(controllerContext.replicasForPartition(newPartitions), NewReplica)
-    //todo offlinePartitionSelector 分区选择器 分区从新建状态到上线状态并不会用到offlinePartitionSelector
+    //todo offlinePartitionSelector 分区Leader选择器 分区从新建状态到上线状态并不会用到offlinePartitionSelector
     // 只有下线状态(broker挂了)，上线状态(分区有主副本且活着，但是控制器选区其它副本作为leader) 到上线状态
     partitionStateMachine.handleStateChanges(newPartitions, OnlinePartition, offlinePartitionSelector)
     replicaStateMachine.handleStateChanges(controllerContext.replicasForPartition(newPartitions), OnlineReplica)
@@ -711,7 +731,7 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
   def startup() = {
     inLock(controllerContext.controllerLock) {
       info("Controller starting up")
-      //todo 注册session会话超时监听器  SessionExpirationListener#handleNewSession
+      //todo 注册session会话超时监听器  SessionExpirationListener#handleNewSession  会话超时会进行选举
       registerSessionExpirationListener()
       isRunning = true
       //todo ZookeeperLeaderElector#startup 主要用于Controller Leader选举
@@ -773,13 +793,15 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
 
   private def initializeControllerContext() {
     // update controller cache with delete topic information
-    //
     controllerContext.liveBrokers = zkUtils.getAllBrokersInCluster().toSet
+    //从zk读取数据 获取topic       (first,second)
     controllerContext.allTopics = zkUtils.getAllTopics().toSet
+    //有个赋值操作 从zk读取数据 TopicAndPartition, Seq[Int]  key = first-0   value = (0,1,2) 副本编号集合
     controllerContext.partitionReplicaAssignment = zkUtils.getReplicaAssignmentForTopics(controllerContext.allTopics.toSeq)
     controllerContext.partitionLeadershipInfo = new mutable.HashMap[TopicAndPartition, LeaderIsrAndControllerEpoch]
     controllerContext.shuttingDownBrokerIds = mutable.Set.empty[Int]
     // update the leader and isr cache for all existing partitions from Zookeeper
+    // 会从zk读取主题分区的leader信息 服务刚启动是没有leader信息
     updateLeaderAndIsrCache()
     // start the channel manager
     //todo 启动通道管理器 建立到集群各个broker的网络连接
@@ -844,6 +866,7 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
     info("List of topics to be deleted: %s".format(topicsQueuedForDeletion.mkString(",")))
     info("List of topics ineligible for deletion: %s".format(topicsIneligibleForDeletion.mkString(",")))
     // initialize the topic deletion manager
+    // ineligible 不合格的  服务刚重启 topicsIneligibleForDeletion 有所有的主题
     deleteTopicManager = new TopicDeletionManager(this, topicsQueuedForDeletion, topicsIneligibleForDeletion)
   }
 
@@ -863,6 +886,7 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
   }
 
   def updateLeaderAndIsrCache(topicAndPartitions: Set[TopicAndPartition] = controllerContext.partitionReplicaAssignment.keySet) {
+    //会从zk读取主题分区的leader信息 服务刚启动是没有leader信息
     val leaderAndIsrInfo = zkUtils.getPartitionLeaderAndIsrForTopics(zkUtils.zkClient, topicAndPartitions)
     for((topicPartition, leaderIsrAndControllerEpoch) <- leaderAndIsrInfo)
       controllerContext.partitionLeadershipInfo.put(topicPartition, leaderIsrAndControllerEpoch)
@@ -1211,11 +1235,14 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
      *
      * @throws Exception On any error.
      */
+    //todo 会话超时重新参与选举
     @throws(classOf[Exception])
     def handleNewSession() {
       info("ZK expired; shut down all controller components and try to re-elect")
       inLock(controllerContext.controllerLock) {
+        //broker被剥夺kafka controller leader时调用
         onControllerResignation()
+        //参与选举
         controllerElector.elect
       }
     }
@@ -1337,6 +1364,7 @@ class ReassignedPartitionsIsrChangeListener(controller: KafkaController, topic: 
   this.logIdent = "[ReassignedPartitionsIsrChangeListener on controller " + controller.config.brokerId + "]: "
   val zkUtils = controller.controllerContext.zkUtils
   val controllerContext = controller.controllerContext
+
 
   /**
    * Invoked when some partitions need to move leader to preferred replica

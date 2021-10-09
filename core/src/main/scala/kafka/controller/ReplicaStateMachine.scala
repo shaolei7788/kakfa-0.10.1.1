@@ -51,15 +51,21 @@ import kafka.utils.CoreUtils._
  * 2. OnlineReplica: 当副本启动，并且是分区副本集的一部分，副本状态为在线，该状态可用收到成为leader副本或成为follower副本请求
  * 3. OfflineReplica: broker宕机后，节点上的所有副本状态为下线
  * 4. NonExistentReplica: 副本被成功删除后，状态为不存在
+ * 5. ReplicaDeletionStarted: 开始删除副本
+ * 6. ReplicaDeletionSuccessful: 成功删除副本
+ * 7. ReplicaDeletionIneligible: 表示副本删除失败
  */
-//todo 用于管理集器中所有replica状态的状态机 保存了所有的副本以及对应的副本状态
-// 正常流程是 不存在状态 > 新建状态 > 上线状态 > 下线状态
+//todo 用于管理集器中所有replica状态的状态机 保存了集群所有的副本以及对应的副本状态
+// 正常流程是 不存在状态 > 新建状态 > 上线状态 >
+
+//启动副本状态机时，存活的副本状态会初始化为上线，不存活的副本状态会初始化为删除失败
 class ReplicaStateMachine(controller: KafkaController) extends Logging {
   private val controllerContext = controller.controllerContext
   private val controllerId = controller.config.brokerId
   private val zkUtils = controllerContext.zkUtils
   // ([Topic=order,Partition=2,Replica=0],OnlineReplica)
   private val replicaState: mutable.Map[PartitionAndReplica, ReplicaState] = mutable.Map.empty
+  //新增或减少broker监听器
   private val brokerChangeListener = new BrokerChangeListener()
   private val brokerRequestBatch = new ControllerBrokerRequestBatch(controller)
   private val hasStarted = new AtomicBoolean(false)
@@ -74,14 +80,13 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
    * Then triggers the OnlineReplica state change for all replicas.
    */
   def startup() {
-    print("====================================startup")
-    // 初始化副本状态 副本如果存活，状态是上线，如果不存活状态为 删除失败
+    //todo 初始化副本状态 副本如果存活，状态是上线，如果不存活状态为 删除失败
     initializeReplicaState()
     // set started flag
     hasStarted.set(true)
     // move all Online replicas to Online
+    // 只针对存活的副本，触发上线到上线操作
     handleStateChanges(controllerContext.allLiveReplicas(), OnlineReplica)
-
     info("Started replica state machine with initial state -> " + replicaState.toString())
   }
 

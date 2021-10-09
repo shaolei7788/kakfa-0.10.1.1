@@ -25,6 +25,7 @@ import kafka.common.KafkaException
 import java.util.concurrent.atomic.AtomicLong
 
 //目的是为了增加kafka集群的高可用 每个副本对应一个Log
+// 副本编号表示对应broker的编号
 class Replica(val brokerId: Int,
               val partition: Partition,//副本对应的分区
               time: Time = SystemTime,
