@@ -279,7 +279,6 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
         checkpointBrokerId(config.brokerId)
         /* register broker metrics */
         registerStats()
-
         //正常启动
         brokerState.newState(RunningAsBroker)
         shutdownLatch = new CountDownLatch(1)
