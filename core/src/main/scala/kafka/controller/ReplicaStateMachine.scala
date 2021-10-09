@@ -56,7 +56,9 @@ import kafka.utils.CoreUtils._
  * 7. ReplicaDeletionIneligible: 表示副本删除失败
  */
 //todo 用于管理集器中所有replica状态的状态机 保存了集群所有的副本以及对应的副本状态
-// 正常流程是 不存在状态 > 新建状态 > 上线状态 > 下线状态
+// 正常流程是 不存在状态 > 新建状态 > 上线状态 >
+
+//启动副本状态机时，存活的副本状态会初始化为上线，不存活的副本状态会初始化为删除失败
 class ReplicaStateMachine(controller: KafkaController) extends Logging {
   private val controllerContext = controller.controllerContext
   private val controllerId = controller.config.brokerId
@@ -78,13 +80,13 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
    * Then triggers the OnlineReplica state change for all replicas.
    */
   def startup() {
-    // 初始化副本状态 副本如果存活，状态是上线，如果不存活状态为 删除失败
+    //todo 初始化副本状态 副本如果存活，状态是上线，如果不存活状态为 删除失败
     initializeReplicaState()
     // set started flag
     hasStarted.set(true)
     // move all Online replicas to Online
+    // 只针对存活的副本，触发上线到上线操作
     handleStateChanges(controllerContext.allLiveReplicas(), OnlineReplica)
-
     info("Started replica state machine with initial state -> " + replicaState.toString())
   }
 
@@ -210,10 +212,15 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
                                     .format(controllerId, controller.epoch, replicaId, topicAndPartition, currState,
                                             targetState))
         case ReplicaDeletionStarted =>
+          //副本的前置状态必须是下线
           assertValidPreviousStates(partitionAndReplica, List(OfflineReplica), targetState)
           replicaState.put(partitionAndReplica, ReplicaDeletionStarted)
           // send stop replica command
-          brokerRequestBatch.addStopReplicaRequestForBrokers(List(replicaId), topic, partition, deletePartition = true,
+          // 发送 stopReplica 请求
+          brokerRequestBatch.addStopReplicaRequestForBrokers(List(replicaId), topic, partition,
+            //带有删除标记
+            deletePartition = true,
+            //删除时，传递处理响应的回调方法
             callbacks.stopReplicaResponseCallback)
           stateChangeLogger.trace("Controller %d epoch %d changed state of replica %d for partition %s from %s to %s"
             .format(controllerId, controller.epoch, replicaId, topicAndPartition, currState, targetState))
@@ -271,16 +278,19 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
           assertValidPreviousStates(partitionAndReplica,
             List(NewReplica, OnlineReplica, OfflineReplica, ReplicaDeletionIneligible), targetState)
           // send stop replica command to the replica so that it stops fetching from the leader
+          //不带删除的标记
           brokerRequestBatch.addStopReplicaRequestForBrokers(List(replicaId), topic, partition, deletePartition = false)
           // As an optimization, the controller removes dead replicas from the ISR
           val leaderAndIsrIsEmpty: Boolean =
             controllerContext.partitionLeadershipInfo.get(topicAndPartition) match {
               case Some(currLeaderIsrAndControllerEpoch) =>
+                //将下线的副本从ISR中移除
                 controller.removeReplicaFromIsr(topic, partition, replicaId) match {
                   case Some(updatedLeaderIsrAndControllerEpoch) =>
                     // send the shrunk ISR state change request to all the remaining alive replicas of the partition.
                     val currentAssignedReplicas = controllerContext.partitionReplicaAssignment(topicAndPartition)
                     if (!controller.deleteTopicManager.isPartitionToBeDeleted(topicAndPartition)) {
+                      //向分区的副本集(除下线外)发送更新请求
                       brokerRequestBatch.addLeaderAndIsrRequestForBrokers(currentAssignedReplicas.filterNot(_ == replicaId),
                         topic, partition, updatedLeaderIsrAndControllerEpoch, replicaAssignment)
                     }
@@ -308,6 +318,7 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
   }
 
   def areAllReplicasForTopicDeleted(topic: String): Boolean = {
+    // 获取指定topic所有副本
     val replicasForTopic = controller.controllerContext.replicasForTopic(topic)
     val replicaStatesForTopic = replicasForTopic.map(r => (r, replicaState(r))).toMap
     debug("Are all replicas for topic %s deleted %s".format(topic, replicaStatesForTopic))
@@ -354,7 +365,7 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
    * Invoked on startup of the replica's state machine to set the initial state for replicas of all existing partitions
    * in zookeeper
    */
-  //副本如果存活，状态是上线，如果不存活状态为 删除失败
+  //初始化副本状态 副本如果存活，状态是上线，如果不存活状态为 删除失败
   private def initializeReplicaState() {
     for((topicPartition, assignedReplicas) <- controllerContext.partitionReplicaAssignment) {
       // topicPartition 主题分区

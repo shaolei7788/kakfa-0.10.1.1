@@ -49,6 +49,7 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
   //默认的leader副本选举器类
   private val noOpPartitionLeaderSelector = new NoOpLeaderSelector(controllerContext)
   private val topicChangeListener = new TopicChangeListener()
+  //删除主题
   private val deleteTopicsListener = new DeleteTopicsListener()
   //
   private val partitionModificationsListeners: mutable.Map[String, PartitionModificationsListener] = mutable.Map.empty
@@ -62,11 +63,13 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
    * the OnlinePartition state change for all new or offline partitions.
    */
   def startup() {
-    // 初始化分区状态
+    // 1 分区有主副本，初始化为上线
+    // 2 分区有主副本，但不存活，初始化为下线
+    // 3 分区没有主副本，初始化为新建
     initializePartitionState()
     // set started flag
     hasStarted.set(true)
-    // 尝试将分区状态转换为OnlinePartition 不一定能成功  假设其它broker都挂了 本broker刚启动 本次尝试就会上线失败
+    // 尝试将分区状态转换为OnlinePartition 只针对新建和下线的分区做状态转换 不一定能成功  假设其它broker都挂了 本broker刚启动 本次尝试就会上线失败
     triggerOnlinePartitionStateChange()
 
     info("Started partition state machine with initial state -> " + partitionState.toString())
@@ -77,7 +80,7 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
     //注册topic发生改变监听器
     registerTopicChangeListener()
     if(controller.config.deleteTopicEnable) {
-      //topic 配置成可删除 添加删除topic 监听器
+      //todo topic 配置成可删除 添加删除topic 的监听器
       registerDeleteTopicListener()
     }
   }
@@ -117,10 +120,12 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
       brokerRequestBatch.newBatch()
       // try to move all partitions in NewPartition or OfflinePartition state to OnlinePartition state except partitions
       // that belong to topics to be deleted
+      //遍历分区状态
       for((topicAndPartition, partitionState) <- partitionState
           if !controller.deleteTopicManager.isTopicQueuedUpForDeletion(topicAndPartition.topic)) {
+        //判断 分区是否离线或者新建
         if(partitionState.equals(OfflinePartition) || partitionState.equals(NewPartition)) {
-          //todo 处理分区
+          //todo 处理分区 上线分区
           handleStateChange(topicAndPartition.topic, topicAndPartition.partition, OnlinePartition, controller.offlinePartitionSelector,
                             (new CallbackBuilder).build)
         }
@@ -398,9 +403,11 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
   }
 
   private def registerDeleteTopicListener() = {
+    // DeleteTopicsPath = /admin/delete_topics
     zkUtils.zkClient.subscribeChildChanges(DeleteTopicsPath, deleteTopicsListener)
   }
 
+  // deregister  撤销的意思
   private def deregisterDeleteTopicListener() = {
     zkUtils.zkClient.unsubscribeChildChanges(DeleteTopicsPath, deleteTopicsListener)
   }
@@ -465,6 +472,7 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
    * 1. Add the topic to be deleted to the delete topics cache, only if the topic exists
    * 2. If there are topics to be deleted, it signals the delete topic thread
    */
+  //todo 删除主题监听器 监听 /admin/delete_topics 子节点的改变
   class DeleteTopicsListener() extends IZkChildListener with Logging {
     this.logIdent = "[DeleteTopicsListener on " + controller.config.brokerId + "]: "
     val zkUtils = controllerContext.zkUtils
@@ -481,22 +489,29 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
           (children: Buffer[String]).toSet
         }
         debug("Delete topics listener fired for topics %s to be deleted".format(topicsToBeDeleted.mkString(",")))
+        //不存在的topic
         val nonExistentTopics = topicsToBeDeleted -- controllerContext.allTopics
         if(nonExistentTopics.nonEmpty) {
           warn("Ignoring request to delete non-existing topics " + nonExistentTopics.mkString(","))
+          // 直接删除对应zk的路径   getDeleteTopicPath(topic) = /admin/delete_topics/[topic]
           nonExistentTopics.foreach(topic => zkUtils.deletePathRecursive(getDeleteTopicPath(topic)))
         }
+        //要被删除的topic
         topicsToBeDeleted --= nonExistentTopics
         if(topicsToBeDeleted.nonEmpty) {
           info("Starting topic deletion for topics " + topicsToBeDeleted.mkString(","))
           // mark topic ineligible for deletion if other state changes are in progress
           topicsToBeDeleted.foreach { topic =>
+            //todo 正在执行最优选举的副本
             val preferredReplicaElectionInProgress =
               controllerContext.partitionsUndergoingPreferredReplicaElection.map(_.topic).contains(topic)
+            //todo 正在执行重分区的副本
             val partitionReassignmentInProgress =
               controllerContext.partitionsBeingReassigned.keySet.map(_.topic).contains(topic)
-            if(preferredReplicaElectionInProgress || partitionReassignmentInProgress)
+            if(preferredReplicaElectionInProgress || partitionReassignmentInProgress) {
+              // 正在执行最优选举的副本 或 正在执行重分区的副本 标记为无效主题
               controller.deleteTopicManager.markTopicIneligibleForDeletion(Set(topic))
+            }
           }
           // add topic to deletion list
           controller.deleteTopicManager.enqueueTopicsForDeletion(topicsToBeDeleted)

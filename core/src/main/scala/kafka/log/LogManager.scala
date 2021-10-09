@@ -416,6 +416,7 @@ class LogManager(val logDirs: Array[File],//数据目录
         cleaner.abortCleaning(topicAndPartition)
         cleaner.updateCheckpoints(removedLog.dir.getParentFile)
       }
+      //删除所有分段文件 logSegments
       removedLog.delete()
       info("Deleted log for partition [%s,%d] in %s."
            .format(topicAndPartition.topic,

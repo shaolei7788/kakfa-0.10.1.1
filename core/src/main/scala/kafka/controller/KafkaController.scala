@@ -359,7 +359,7 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
       registerIsrChangeNotificationListener()
       //todo 选举最优的副本作为分区的主副本 监听器
       registerPreferredReplicaElectionListener()
-      //todo 注册更改主题的状态器 /brokers/topics
+      //todo 注册更改主题的状态器 /brokers/topics  有创建 有删除
       partitionStateMachine.registerListeners()
       //todo 注册更改代理节点的状态器 /brokers/ids
       replicaStateMachine.registerListeners()
@@ -368,8 +368,13 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
       initializeControllerContext()
 
       //todo 因为分区有多个副本，只有集群中的所有副本状态都初始化完成，才可以初始化分区的状态，所以控制会先启动副本状态机，然后才启动分区状态机
-      // 启动两个状态机 初始化副本状态 副本如果存活，状态是上线，如果不存活状态为 删除失败
+      // 启动两个状态机
+      //初始化副本状态 1 副本如果存活，状态是上线，2 如果不存活状态为 删除失败
       replicaStateMachine.startup()
+      //初始化分区状态
+      // 1 分区有主副本，初始化为上线
+      // 2 分区有主副本，但不存活，初始化为下线
+      // 3 分区没有主副本，初始化为新建
       partitionStateMachine.startup()
       //todo 给所有分区注册 分区数据修改监听器  /brokers/topics/first  {"version":1,"partitions":{"2":[0,2],"1":[2,1],"0":[1,0]}}
       controllerContext.allTopics.foreach(topic => partitionStateMachine.registerPartitionChangeListener(topic))
@@ -516,7 +521,7 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
         !deleteTopicManager.isTopicQueuedUpForDeletion(partitionAndLeader._1.topic)).keySet
     //todo 将这些分区的状态从上线状态更改为下线状态  只是更改状态
     partitionStateMachine.handleStateChanges(partitionsWithoutLeader, OfflinePartition)
-    //todo 重新选举分区的主副本，下线状态的分区会转为上线状态
+    //todo 重新选举分区的主副本，将下线状态的分区会转为上线状态
     partitionStateMachine.triggerOnlinePartitionStateChange()
     //todo 获取指定broker中保存的所有副本
     var allReplicasOnDeadBrokers = controllerContext.replicasOnBrokers(deadBrokersSet)
@@ -533,7 +538,7 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
     }
 
     //todo 主副本都没有在下线的broker,通知所有代理节点更新元数据
-    // 如果主副本在下先的broker,在重新选举主副本时，就会发送请求给所有的broker
+    // 如果主副本在下线的broker,在重新选举主副本时，就会发送请求给所有的broker
     if (partitionsWithoutLeader.isEmpty) {
       sendUpdateMetadataRequest(controllerContext.liveOrShuttingDownBrokerIds.toSeq)
     }

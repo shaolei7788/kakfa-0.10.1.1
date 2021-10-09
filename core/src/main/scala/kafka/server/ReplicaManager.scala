@@ -242,15 +242,18 @@ class ReplicaManager(val config: KafkaConfig,
     scheduler.schedule("isr-change-propagation", maybePropagateIsrChanges, period = 2500L, unit = TimeUnit.MILLISECONDS)
   }
 
+
   def stopReplica(topic: String, partitionId: Int, deletePartition: Boolean): Short  = {
     stateChangeLogger.trace("Broker %d handling stop replica (delete=%s) for partition [%s,%d]".format(localBrokerId,
       deletePartition.toString, topic, partitionId))
     val errorCode = Errors.NONE.code
+    //获取分区
     getPartition(topic, partitionId) match {
       case Some(partition) =>
         if(deletePartition) {
-          val removedPartition = allPartitions.remove((topic, partitionId))
+          val removedPartition : Partition = allPartitions.remove((topic, partitionId))
           if (removedPartition != null) {
+            // Partition#delete 会删除本地日志
             removedPartition.delete() // this will delete the local log
             val topicHasPartitions = allPartitions.keys.exists { case (t, _) => topic == t }
             if (!topicHasPartitions)
@@ -275,6 +278,7 @@ class ReplicaManager(val config: KafkaConfig,
     errorCode
   }
 
+  //副本管理器停止replica
   def stopReplicas(stopReplicaRequest: StopReplicaRequest): (mutable.Map[TopicPartition, Short], Short) = {
     replicaStateChangeLock synchronized {
       val responseMap = new collection.mutable.HashMap[TopicPartition, Short]
@@ -286,8 +290,10 @@ class ReplicaManager(val config: KafkaConfig,
         val partitions = stopReplicaRequest.partitions.asScala
         controllerEpoch = stopReplicaRequest.controllerEpoch
         // First stop fetchers for all partitions, then stop the corresponding replicas
+        // 移除分区拉取线程
         replicaFetcherManager.removeFetcherForPartitions(partitions)
         for (topicPartition <- partitions){
+          //todo stopReplica 停止副本
           val errorCode = stopReplica(topicPartition.topic, topicPartition.partition, stopReplicaRequest.deletePartitions)
           responseMap.put(topicPartition, errorCode)
         }
