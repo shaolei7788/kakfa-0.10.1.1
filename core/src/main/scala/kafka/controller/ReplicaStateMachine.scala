@@ -60,6 +60,7 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
   private val zkUtils = controllerContext.zkUtils
   // ([Topic=order,Partition=2,Replica=0],OnlineReplica)
   private val replicaState: mutable.Map[PartitionAndReplica, ReplicaState] = mutable.Map.empty
+  //新增或减少broker监听器
   private val brokerChangeListener = new BrokerChangeListener()
   private val brokerRequestBatch = new ControllerBrokerRequestBatch(controller)
   private val hasStarted = new AtomicBoolean(false)
@@ -123,7 +124,11 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
       info("Invoking state change to %s for replicas %s".format(targetState, replicas.mkString(",")))
       try {
         brokerRequestBatch.newBatch()
-        replicas.foreach(r => handleStateChange(r, targetState, callbacks))
+        //遍历replicas
+        replicas.foreach(r => {
+          //todo 处理副本状态改变
+          handleStateChange(r, targetState, callbacks)
+        })
         brokerRequestBatch.sendRequestsToBrokers(controller.epoch)
       }catch {
         case e: Throwable => error("Error while moving some replicas to %s state".format(targetState), e)
@@ -166,7 +171,7 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
    * @param partitionAndReplica The replica for which the state transition is invoked
    * @param targetState The end state that the replica should be moved to
    */
-  //todo 对单个副本的状态改变
+  //todo 对单个副本的状态改变  将PartitionAndReplica 的状态变成 targetState
   def handleStateChange(partitionAndReplica: PartitionAndReplica, targetState: ReplicaState,
                         callbacks: Callbacks) {
     val topic = partitionAndReplica.topic
@@ -177,6 +182,7 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
       throw new StateChangeFailedException(("Controller %d epoch %d initiated state change of replica %d for partition %s " +
                                             "to %s failed because replica state machine has not started")
                                               .format(controllerId, controller.epoch, replicaId, topicAndPartition, targetState))
+    //获取partitionAndReplica的当前状态
     val currState = replicaState.getOrElseUpdate(partitionAndReplica, NonExistentReplica)
     try {
       val replicaAssignment = controllerContext.partitionReplicaAssignment(topicAndPartition)
@@ -232,6 +238,7 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
             List(NewReplica, OnlineReplica, OfflineReplica, ReplicaDeletionIneligible), targetState)
           replicaState(partitionAndReplica) match {
             case NewReplica =>
+              //新创建的副本
               // add this replica to the assigned replicas list for its partition
               val currentAssignedReplicas = controllerContext.partitionReplicaAssignment(topicAndPartition)
               if(!currentAssignedReplicas.contains(replicaId)) {
@@ -242,11 +249,13 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
                                         .format(controllerId, controller.epoch, replicaId, topicAndPartition, currState,
                                                 targetState))
             case _ =>
+              //之前存在现在要上线的副本
               // check if the leader for this partition ever existed
               controllerContext.partitionLeadershipInfo.get(topicAndPartition) match {
+                //已经存在副本的leader信息
                 case Some(leaderIsrAndControllerEpoch) =>
-                  brokerRequestBatch.addLeaderAndIsrRequestForBrokers(List(replicaId), topic, partition, leaderIsrAndControllerEpoch,
-                    replicaAssignment)
+                  brokerRequestBatch.addLeaderAndIsrRequestForBrokers(List(replicaId), topic, partition, leaderIsrAndControllerEpoch, replicaAssignment)
+                  //todo 将该副本上线
                   replicaState.put(partitionAndReplica, OnlineReplica)
                   stateChangeLogger.trace("Controller %d epoch %d changed state of replica %d for partition %s from %s to %s"
                     .format(controllerId, controller.epoch, replicaId, topicAndPartition, currState, targetState))
@@ -384,27 +393,32 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
         if (hasStarted.get) {
           ControllerStats.leaderElectionTimer.time {
             try {
-              // getBrokerInfo 读取 zk上 /brokers/ids/brokerId 节点的数据  curBrokers = Broker
+              // getBrokerInfo读取 zk上 /brokers/ids/brokerId 节点的数据  curBrokers = Broker
               val curBrokers  = currentBrokerList.map(_.toInt).toSet.flatMap(zkUtils.getBrokerInfo)
               val curBrokerIds = curBrokers.map(_.id)
               val liveOrShuttingDownBrokerIds = controllerContext.liveOrShuttingDownBrokerIds
-              //新加的broker id
+              //新加的brokerIds
               val newBrokerIds = curBrokerIds -- liveOrShuttingDownBrokerIds
-              //挂了的broker id
+              //挂了的brokerIds
               val deadBrokerIds = liveOrShuttingDownBrokerIds -- curBrokerIds
-
+              //新加的broker集合 Broker
               val newBrokers = curBrokers.filter(broker => newBrokerIds(broker.id))
               controllerContext.liveBrokers = curBrokers
+              //进行排序
               val newBrokerIdsSorted = newBrokerIds.toSeq.sorted
               val deadBrokerIdsSorted = deadBrokerIds.toSeq.sorted
               val liveBrokerIdsSorted = curBrokerIds.toSeq.sorted
               info("Newly added brokers: %s, deleted brokers: %s, all live brokers: %s"
                 .format(newBrokerIdsSorted.mkString(","), deadBrokerIdsSorted.mkString(","), liveBrokerIdsSorted.mkString(",")))
-              //todo 添加broker
+              //todo 添加broker 获取跟broker的连接
               newBrokers.foreach(controllerContext.controllerChannelManager.addBroker)
               deadBrokerIds.foreach(controllerContext.controllerChannelManager.removeBroker)
               if(newBrokerIds.nonEmpty) {
                 //todo broker上线
+                // 1 上线节点上的所有副本转换为上线
+                // 2 上线节点上的所有分区转换为上线
+                // 3 可能重新分配分区
+                // 4 可能需要删除topic
                 controller.onBrokerStartup(newBrokerIdsSorted)
               }
               if(deadBrokerIds.nonEmpty) {

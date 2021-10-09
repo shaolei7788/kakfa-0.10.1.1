@@ -453,15 +453,16 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
   def onBrokerStartup(newBrokers: Seq[Int]) {
     info("New broker startup callback for %s".format(newBrokers.mkString(",")))
     val newBrokersSet = newBrokers.toSet
-    // 发送 更新元数据 请求给所有代理节点，旧节点在这次更新时知道有这些节点加入
+    // 发送 更新元数据 请求给所有代理节点，让旧节点在这次更新时知道有这些节点加入
     sendUpdateMetadataRequest(controllerContext.liveOrShuttingDownBrokerIds.toSeq)
     // the very first thing to do when a new broker comes up is send it the entire list of partitions that it is
     // supposed to host. Based on that the broker starts the high watermark threads for the input list of partitions
     // [Topic=order,Partition=2,Replica=0]
+    // 获取指定broker中保存的所有副本
     val allReplicasOnNewBrokers = controllerContext.replicasOnBrokers(newBrokersSet)
-    //上线节点上的所有副本转换为上线
+    //todo 上线节点上的所有副本转换为上线
     replicaStateMachine.handleStateChanges(allReplicasOnNewBrokers, OnlineReplica)
-    //如果分区状态为新建或下线 则重新选举主副本，并转为上线状态 已经是在线状态则不变
+    //todo 如果分区状态为新建或下线 则重新选举主副本，并转为上线状态 已经是在线状态则不变
     partitionStateMachine.triggerOnlinePartitionStateChange()
     // check if reassignment of some partitions need to be restarted
     //如果重新分配分区的新副本在上线节点中，则重新分配分区
