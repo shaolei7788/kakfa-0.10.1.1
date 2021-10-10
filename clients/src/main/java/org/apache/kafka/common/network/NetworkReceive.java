@@ -21,14 +21,17 @@ import java.nio.channels.ScatteringByteChannel;
 /**
  * A size delimited Receive that consists of a 4 byte network-ordered size N followed by N bytes of content
  */
+//接收对象
 public class NetworkReceive implements Receive {
 
     public final static String UNKNOWN_SOURCE = "";
     public final static int UNLIMITED = -1;
-
+    //客户端接收响应的源节点
     private final String source;
+    //代表数据长度的字节缓冲区
     private final ByteBuffer size;
     private final int maxSize;
+    //代表数据内容的字节缓冲区
     private ByteBuffer buffer;
 
 

@@ -97,10 +97,10 @@ class SocketServer(val config: KafkaConfig, val metrics: Metrics, val time: Time
         //numProcessorThreads = 3
         val processorEndIndex = processorBeginIndex + numProcessorThreads
 
-        for (i <- processorBeginIndex until processorEndIndex)
+        for (i <- processorBeginIndex until processorEndIndex) {
           //todo 每个Processor都有自己的Selector,主要用于从连接中读取请求和写回请求
           processors(i) = newProcessor(i, connectionQuotas, protocol)
-
+        }
         //todo 创建acceptor对象 用于接收并处理所有的连接  同时会启动processor线程
         val acceptor = new Acceptor(endpoint, sendBufferSize, recvBufferSize, brokerId,
           processors.slice(processorBeginIndex, processorEndIndex), connectionQuotas)
@@ -431,7 +431,7 @@ private[kafka] class Processor(val id: Int,
       try {
         //todo 处理newConnections队列中的SocketChannel
         configureNewConnections()
-        // register any new responses for writing
+        //todo 注册写事件，用于发送响应给客户端
         processNewResponses()
         //读取请求，发送响应
         poll()
@@ -458,17 +458,18 @@ private[kafka] class Processor(val id: Int,
   }
 
   private def processNewResponses() {
-    //处理响应
+    //id是处理器的编号 处理响应时，每个处理器对应一个响应队列
     var curr : RequestChannel.Response = requestChannel.receiveResponse(id)
     while (curr != null) {
       try {
         curr.responseAction match {
           case RequestChannel.NoOpAction =>
-            //表示此连接暂无响应需要发送 即 注册 OP_READ
+            //表示此连接暂无响应需要发送 需要读取更多的请求 unmute方法 注册OP_READ事件
             // There is no response to send to the client, we need to read more pipelined requests
             // that are sitting in the server's socket buffer
             curr.request.updateRequestMetrics
             trace("Socket server received empty response to send, registering for read: " + curr)
+            //unmute 取消静音
             selector.unmute(curr.request.connectionId)
           case RequestChannel.SendAction =>
             //表示该响应需要发送给客户端
@@ -493,8 +494,7 @@ private[kafka] class Processor(val id: Int,
     if (channel == null) {
       warn(s"Attempting to send response via channel for which there is no open connection, connection id $id")
       response.request.updateRequestMetrics()
-    }
-    else {
+    } else {
       selector.send(response.responseSend)
       inflightResponses += (response.request.connectionId -> response)
     }
@@ -517,13 +517,13 @@ private[kafka] class Processor(val id: Int,
       try {
         val channel = selector.channel(receive.source)
         //创建KafakChannel对应的session对象，与权限控制相关
-        val session = RequestChannel.Session(new KafkaPrincipal(KafkaPrincipal.USER_TYPE, channel.principal.getName),
-          channel.socketAddress)
+        val session = RequestChannel.Session(new KafkaPrincipal(KafkaPrincipal.USER_TYPE, channel.principal.getName),channel.socketAddress)
         //创建RequestChannel.Request对象
-        val req : RequestChannel.Request = RequestChannel.Request(processor = id, connectionId = receive.source, session = session, buffer = receive.payload, startTimeMs = time.milliseconds, securityProtocol = protocol)
+        val req : RequestChannel.Request = RequestChannel.Request(processor = id, connectionId = receive.source,
+          session = session, buffer = receive.payload, startTimeMs = time.milliseconds, securityProtocol = protocol)
         //todo 将req加入requestChannel
         requestChannel.sendRequest(req)
-        //取消注册的OP_READ事件，连接不再读取数据
+        //取消注册的OP_READ事件，不再读取数据
         selector.mute(receive.source)
       } catch {
         case e @ (_: InvalidRequestException | _: SchemaException) =>
@@ -541,7 +541,7 @@ private[kafka] class Processor(val id: Int,
         throw new IllegalStateException(s"Send for ${send.destination} completed, but not in `inflightResponses`")
       }
       resp.request.updateRequestMetrics()
-      //取消注册的OP_READ事件，连接不再读取数据
+      //注册OP_READ事件，可以继续读取更多的客户端请求
       selector.unmute(send.destination)
     }
   }

@@ -57,7 +57,8 @@ public class NetworkClient implements KafkaClient {
     private final ClusterConnectionStates connectionStates;
 
     /* the set of requests currently being sent or awaiting a response */
-    //当前正在发送或等待响应的请求集
+    //缓存了还没有收到服务端响应的客户端请求
+    // 当有新请求需要处理时，会在队首入列，而实际被处理的请求，则是从队尾出列，保证入列早的请求先得到处理
     private final InFlightRequests inFlightRequests;
 
     /* the socket send buffer size in bytes */
@@ -149,16 +150,13 @@ public class NetworkClient implements KafkaClient {
         //如果当前的节点为null,就报异常
         if (node.isEmpty())
             throw new IllegalArgumentException("Cannot connect to empty node " + node);
-        //检查具有给定id的节点是否准备好发送请求。
+        //检查给定的节点是否准备好发送请求。
         if (isReady(node, now))
             return true;
         //判断是否可以尝试去建立连接
         if (connectionStates.canConnect(node.idString(), now))
-            // if we are interested in sending to a node and we don't have a connection to it, initiate one
-            //初始化连接
-            //绑定连接事件
+            //todo 允许连接 初始化连接 绑定连接事件
             initiateConnect(node, now);
-
         return false;
     }
 
@@ -249,6 +247,7 @@ public class NetworkClient implements KafkaClient {
      * @param request The request
      * @param now The current timestamp
      */
+    //为每个节点创建一个客户端请求，将请求暂存到节点对应的通道里
     @Override
     public void send(ClientRequest request, long now) {
         String nodeId = request.request().destination();
@@ -258,14 +257,17 @@ public class NetworkClient implements KafkaClient {
         doSend(request, now);
     }
 
+
     private void doSend(ClientRequest request, long now) {
         request.setSendTimeMs(now);
         //往inFlightRequests组件里存储request请求
         //其实就是存储还没有收到响应的请求
         //默认最多存储5个请求
         //如果inFlightRequests里面的请求成功发送出去了并且成功接收到了响应,那么这个请求会被移除
+        //todo inFlightRequests缓存了还没有收到服务端响应的客户端请求
+        // 包含一个节点到双端队列的Map类型  inFlightRequests.requests = Map<String, Deque<ClientRequest>>
+        // 在准备发送请求时，请求将添加到指定节点对应的队列中，收到响应后，才会将该请求从队列中移除
         this.inFlightRequests.add(request);
-        //TODO
         selector.send(request.request());
     }
 
@@ -284,12 +286,16 @@ public class NetworkClient implements KafkaClient {
         //步骤一: 封装一个要拉取元数据的请求  DefaultMetadataUpdater#maybeUpdate
         long metadataTimeout = metadataUpdater.maybeUpdate(now);
         try {
-            //步骤二: 发送请求,进行复杂的网络操作
+            //步骤二: 不仅有发送请求,也有接收响应 会进行复杂的网络操作
             //TODO 执行网络IO的操作
             this.selector.poll(Utils.min(timeout, metadataTimeout, requestTimeoutMs));
         } catch (IOException e) {
             log.error("Unexpected error during I/O", e);
         }
+
+        //不需要响应的流程。 开始发送请求 -> 添加到客户端请求队列(InFlightRequests) -> 发送请求 -> 请求发送成功 -> 从队列中删除发送请求 -> 构造客户端响应 ->
+        //需要响应的流程。   开始发送请求 -> 添加到客户端请求队列(InFlightRequests) -> 发送请求 -> 请求发送成功 -> 等待接收响应 -> 接收响应 -> 接收到完整的响应
+        // -> 从队列中删除发送请求 -> 构造客户端响应 ->
 
         // process completed actions
         long updatedNow = this.time.milliseconds();
@@ -310,6 +316,7 @@ public class NetworkClient implements KafkaClient {
         //TODO 处理长时间没有接收到响应的请求
         handleTimedOutRequests(responses, updatedNow);
 
+        // 上面几个处理操作都会往 responses 中添加响应，有了响应后开始调用请求的回调函数
         // invoke callbacks
         for (ClientResponse response : responses) {
             if (response.request().hasCallback()) {
@@ -322,7 +329,7 @@ public class NetworkClient implements KafkaClient {
                     //消费者回调对象是RequestFutureCompletionHandler
                     //RequestFutureCompletionHandler implements RequestCompletionHandler
                     RequestCompletionHandler callback = clientRequest.callback();
-                    //todo 这个callback 即可能是生产者也可可能是消费者的回调对象
+                    //todo 这个callback 即可能是生产者也可能是消费者的回调对象
                     // 此处调用的是网络请求的回调函数,不是业务代码里面我们自己的回调函数
                     // 将response响应放入pendingCompletion
                     callback.onComplete(response);
@@ -331,7 +338,6 @@ public class NetworkClient implements KafkaClient {
                 }
             }
         }
-
         return responses;
     }
 
@@ -481,11 +487,13 @@ public class NetworkClient implements KafkaClient {
      * @param responses The list of responses to update
      * @param now The current time
      */
+    //处理已经完成的发送请求，如果不期望得到响应，就认为整个请求全部完成
     private void handleCompletedSends(List<ClientResponse> responses, long now) {
         // if no response is expected then when the send is completed, return it
         for (Send send : this.selector.completedSends()) {
             ClientRequest request = this.inFlightRequests.lastSent(send.destination());
             if (!request.expectResponse()) {
+                //todo 请求不期待响应 completeLastSent 最后一个完成发送请求
                 this.inFlightRequests.completeLastSent(send.destination());
                 responses.add(new ClientResponse(request, now, false, null));
             }
@@ -505,14 +513,15 @@ public class NetworkClient implements KafkaClient {
             /**
              * kafka有这样一个机制: 每个连接可以容忍5个没有接收到响应,但是已经发出去了的请求
              */
-            //从inFlightRequests中移除已经接收到响应的请求
-            //把之前存入的请求也获取到了
-            //获取给定节点的请求队列,检索并删除请求列表的最后一个元素
+            //todo 从inFlightRequests中移除已经接收到响应的请求，把之前存入的请求也获取到了
             ClientRequest req = inFlightRequests.completeNext(source);
             //解析服务端发送回来的请求(里面有响应的结果数据)
             Struct body = parseResponse(receive.payload(), req.request().header());
             //TODO 判断是否是关于元数据信息响应
-            if (!metadataUpdater.maybeHandleCompletedReceive(req, now, body))
+            if (!metadataUpdater.maybeHandleCompletedReceive(req, now, body)) {
+                //是关于元数据信息响应的，不需要添加到responses
+                //不是关于元数据信息响应的，需要添加到responses
+
                 //将解析的结果封装到ClientResponse对象中
                 //ClientResponse对象中的四个参数依次是
                 // 1.发出去的请求
@@ -520,6 +529,7 @@ public class NetworkClient implements KafkaClient {
                 // 3.客户端是否在完全读取响应之前断开连接
                 // 4.响应的内容
                 responses.add(new ClientResponse(req, now, false, body));
+            }
         }
     }
 

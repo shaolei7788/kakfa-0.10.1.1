@@ -120,9 +120,12 @@ public class KafkaChannel {
         return socket.getInetAddress().toString();
     }
 
+    //KafkaChannel 一次只能发送一个send请求
     public void setSend(Send send) {
-        if (this.send != null)
+        if (this.send != null) {
+            //之前的send还没有发送完成，新的请求不能进来
             throw new IllegalStateException("Attempt to begin a send operation with prior send operation still in progress.");
+        }
         //往KafkaChannel里面绑定一个发送请求
         this.send = send;
         //这里绑定了一个OP_WRITE事件
@@ -130,10 +133,11 @@ public class KafkaChannel {
         this.transportLayer.addInterestOps(SelectionKey.OP_WRITE);
     }
 
+    //读取操作如果一次read没有完成，也要调用多次read
     public NetworkReceive read() throws IOException {
         NetworkReceive result = null;
-
         if (receive == null) {
+            //id 会作为NetworkReceive的source
             receive = new NetworkReceive(maxReceiveSize, id);
         }
         //一直在读取数据
@@ -147,28 +151,34 @@ public class KafkaChannel {
         return result;
     }
 
+    private long receive(NetworkReceive receive) throws IOException {
+        //todo 真正的读取
+        return receive.readFrom(transportLayer);
+    }
+
+
     public Send write() throws IOException {
         Send result = null;
-        //send方法就是发送网络请求的方法
+        //todo send方法就是发送网络请求的方法 如果send(send)返回值为false,表示请求还没有发送成功
         if (send != null && send(send)) {
             result = send;
+            //请求发送完成，才可以发送下一个请求
             send = null;
         }
         return result;
     }
 
-    private long receive(NetworkReceive receive) throws IOException {
-        return receive.readFrom(transportLayer);
-    }
-
     private boolean send(Send send) throws IOException {
         //最终执行发送请求的代码就在这里
         send.writeTo(transportLayer);
-        if (send.completed())
-            //移除OP_WRITE
+        if (send.completed()) {
+            //todo send请求全部写出去，移除OP_WRITE
             transportLayer.removeInterestOps(SelectionKey.OP_WRITE);
-
+        }
+        //send请求没有全部写出去，会继续监听写事件
         return send.completed();
     }
+
+
 
 }

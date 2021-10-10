@@ -36,6 +36,7 @@ final class InFlightRequests {
      * Add the given request to the queue for the connection it was directed to
      */
     public void add(ClientRequest request) {
+        // request.request().destination() 节点id
         Deque<ClientRequest> reqs = this.requests.get(request.request().destination());
         if (reqs == null) {
             reqs = new ArrayDeque<>();
@@ -59,6 +60,9 @@ final class InFlightRequests {
      * Get the oldest request (the one that that will be completed next) for the given node
      * 从给定的节点中获得已经发送的请求列表,检索并删除请求列表的最后一个元素
      */
+    //获取给定节点node的时间最久执行中请求
+    // 根据给定节点node获取客户端请求双端队列reqs，并从poll出队尾元素
+    // add时是通过addFirst()方法添加到队首的，所以队尾的元素是时间最久的，也是应该先处理的
     public ClientRequest completeNext(String node) {
         return requestQueue(node).pollLast();
     }
@@ -89,6 +93,7 @@ final class InFlightRequests {
     public boolean canSendMore(String node) {
         Deque<ClientRequest> queue = requests.get(node);
         return queue == null || queue.isEmpty() ||
+                // maxInFlightRequestsPerConnection = 5
                (queue.peekFirst().request().completed() && queue.size() < this.maxInFlightRequestsPerConnection);
     }
 

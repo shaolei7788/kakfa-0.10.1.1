@@ -216,6 +216,7 @@ class RequestChannel(val numProcessors: Int, val queueSize: Int) extends KafkaMe
   }
 
   /** Send a request to be handled, potentially blocking until there is room in the queue for the request */
+  //todo 处理器收到客户端请求后，将请求放入请求队列
   def sendRequest(request: RequestChannel.Request) {
     requestQueue.put(request)
   }
@@ -244,10 +245,12 @@ class RequestChannel(val numProcessors: Int, val queueSize: Int) extends KafkaMe
   }
 
   /** Get the next request or block until specified time has elapsed */
+  //处理器从请求队列获取请求，队列为空会阻塞，直到有处理器加入新的请求
   def receiveRequest(timeout: Long): RequestChannel.Request =
     requestQueue.poll(timeout, TimeUnit.MILLISECONDS)
 
   /** Get the next request or block until there is one */
+  //处理器从请求队列获取请求，不会阻塞
   def receiveRequest(): RequestChannel.Request =
     requestQueue.take()
 

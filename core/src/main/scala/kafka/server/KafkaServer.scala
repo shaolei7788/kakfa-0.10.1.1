@@ -244,7 +244,7 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
           authZ
         }
 
-        //创建KafkaApis对象 是服务端处理所有请求的入口
+        //TODO 创建KafkaApis对象 是服务端处理所有请求的入口  基本集合了所有的重要组件
         apis = new KafkaApis(socketServer.requestChannel, replicaManager, adminManager, groupCoordinator,
           kafkaController, zkUtils, config.brokerId, config, metadataCache, metrics, authorizer, quotaManagers, clusterId)
 

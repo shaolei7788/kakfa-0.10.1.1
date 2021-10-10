@@ -499,12 +499,13 @@ public final class RecordAccumulator {
                                                  Set<Node> nodes,
                                                  int maxSize,
                                                  long now) {
-        if (nodes.isEmpty())
+        if (nodes.isEmpty()) {
             return Collections.emptyMap();
-
+        }
         Map<Integer, List<RecordBatch>> batches = new HashMap<>();
         for (Node node : nodes) {
             int size = 0;
+            //获取指定nodeid，对应的分区
             List<PartitionInfo> parts = cluster.partitionsForNode(node.id());
             List<RecordBatch> ready = new ArrayList<>();
             /* to make starvation less likely this loop doesn't start at 0 */

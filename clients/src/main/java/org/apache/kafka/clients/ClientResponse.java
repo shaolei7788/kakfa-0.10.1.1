@@ -18,6 +18,7 @@ import org.apache.kafka.common.protocol.types.Struct;
  * A response from the server. Contains both the body of the response as well as the correlated request that was
  * originally sent.
  */
+//客户端响应
 public class ClientResponse {
 
     private final long receivedTimeMs;//接收到响应的时间戳

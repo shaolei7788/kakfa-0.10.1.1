@@ -169,6 +169,7 @@ public class Selector implements Selectable {
         //获取到SocketChannel
         SocketChannel socketChannel = SocketChannel.open();
         socketChannel.configureBlocking(false);
+        //对生产者而已自己是客户端
         Socket socket = socketChannel.socket();
         socket.setKeepAlive(true);
         //设置一些参数
@@ -183,8 +184,7 @@ public class Selector implements Selectable {
         socket.setTcpNoDelay(true);
         boolean connected;
         try {
-            //尝试去服务器连接
-            //因为这里是非阻塞的,有可能立马连接成功了,那么就返回true,
+            //非阻塞去服务器连接，有可能立马连接成功了,那么就返回true,
             //有可能是很久才连接成功,那么就返回false
             connected = socketChannel.connect(address);
         } catch (UnresolvedAddressException e) {
@@ -196,7 +196,7 @@ public class Selector implements Selectable {
         }
         //socketChannel往Selector上面注册一个OP_CONNECT
         SelectionKey key = socketChannel.register(nioSelector, SelectionKey.OP_CONNECT);
-        //根据socketChannel封装出一个KafkaChannel
+        //根据socketChannel封装出一个KafkaChannel  PlaintextChannelBuilder#buildChannel 纯文本模式
         KafkaChannel channel = channelBuilder.buildChannel(id, key, maxReceiveSize);
         //把key和KafkaChannel关联起来,这样后面使用起来比较方便
         //我们可以根据key找到KafkaChannel,也可以根据KafkaChannel找到key
@@ -304,7 +304,7 @@ public class Selector implements Selectable {
 
         /* check ready keys */
         long startSelect = time.nanoseconds();
-        //从Selector上找到有多少个key注册了
+        //从Selector上找到有多少个key注册了 立即进行一次轮询，有事件直接返回，没事件一直等待timeout后返回
         int readyKeys = select(timeout);
         long endSelect = time.nanoseconds();
         this.sensors.selectTime.record(endSelect - startSelect, time.milliseconds());
@@ -315,6 +315,7 @@ public class Selector implements Selectable {
             pollSelectionKeys(immediatelyConnectedKeys, true, endSelect);
         }
 
+        //todo 添加到CompletedReceives
         addToCompletedReceives();
 
         long endIo = time.nanoseconds();
@@ -374,18 +375,19 @@ public class Selector implements Selectable {
                     //接收服务端发送回来的响应(请求)
                     //networkReceive代表的就是一个服务端发送回来的响应
                     //里面不断的读取数据,并且还涉及到一些粘包和拆包的问题
-                    while ((networkReceive = channel.read()) != null)
+                    while ((networkReceive = channel.read()) != null) {
+                        //将networkReceive 添加到StagedReceives
                         addToStagedReceives(channel, networkReceive);
+                    }
                 }
 
                 /* if channel is ready write to any sockets that have space in their buffer and for which we have data */
                 if (channel.ready() && key.isWritable()) {
-                    //TODO 服务端
-                    //里面发现我们有消息发送出去了,然后就移除OP_WRITE
+                    //TODO 里面发现我们有消息发送出去了,然后就移除OP_WRITE
                     Send send = channel.write();
                     //已经完成响应消息的发送
                     if (send != null) {
-                        //send RequestSend
+                        //completedSends 表示在选择器已经发送完成的请求
                         this.completedSends.add(send);
                         this.sensors.recordBytesSent(channel.id(), send.size());
                     }
@@ -617,8 +619,7 @@ public class Selector implements Selectable {
                 if (!channel.isMute()) {
                     //获取到每个连接对应的队列
                     Deque<NetworkReceive> deque = entry.getValue();
-                    //获取到响应
-                    //对于服务端来说,这里接收到的是请求
+                    //获取服务端响应
                     NetworkReceive networkReceive = deque.poll();
                     //把响应存入completedReceives数据结构里面
                     this.completedReceives.add(networkReceive);

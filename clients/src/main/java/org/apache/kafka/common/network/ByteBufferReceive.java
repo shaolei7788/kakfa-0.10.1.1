@@ -24,7 +24,6 @@ import java.nio.channels.ScatteringByteChannel;
  * A receive backed by an array of ByteBuffers
  */
 public class ByteBufferReceive implements Receive {
-
     private final String source;
     private final ByteBuffer[] buffers;
     private int remaining;

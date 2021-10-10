@@ -53,9 +53,9 @@ import scala.collection.JavaConverters._
  */
 //是服务端处理所有请求的入口
 class KafkaApis(val requestChannel: RequestChannel,//请求通道
-                val replicaManager: ReplicaManager,//
+                val replicaManager: ReplicaManager,//副本管理器
                 val adminManager: AdminManager,
-                val coordinator: GroupCoordinator,//协调者
+                val coordinator: GroupCoordinator,//组协调者
                 val controller: KafkaController,//控制器
                 val zkUtils: ZkUtils,
                 val brokerId: Int,
@@ -429,7 +429,7 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
             // updating this part of the code to handle it properly.
             case version => throw new IllegalArgumentException(s"Version `$version` of ProduceRequest is not handled. Code must be updated.")
           }
-          //数据处理完之后需要给客户端返回相应
+          //TODO 请求处理完之后放入processor对应的响应队列
           requestChannel.sendResponse(new RequestChannel.Response(request, new ResponseSend(request.connectionId, respHeader, respBody)))
         }
       }
@@ -443,6 +443,8 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
         numBytesAppended,
         produceResponseCallback)
     }
+
+
 
     if (authorizedRequestInfo.isEmpty) {
       //授权信息为空 直接发送响应回调

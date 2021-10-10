@@ -166,7 +166,6 @@ public class Sender implements Runnable {
      */
     void run(long now) {
         /**
-         *
          * (1).代码第一次运行到这里
          *      第一次进来的时候cluster里面是没有元数据的
          *      接下来的代码都会依赖元数据,所以后面的代码都不会执行
@@ -183,15 +182,12 @@ public class Sender implements Runnable {
          * 步骤二: 首先判断哪些batches<TopicPartion,Dqueue<RecordBatch>>可以发送,
          *          (换句话说,我们需要知道一个批次可以发送出去的条件)
          *      获取到这个partition的leader partition对应的broker主机(根据元数据来就行了)
-         *
          *      kafka发送消息的时候,会把消息发送到leader partition上面
-         *
          *      哪些broker上面需要我们去发送消息
          */
         // get the list of partitions with data ready to send
         // 获取准备发送数据的分区列表
         RecordAccumulator.ReadyCheckResult result = this.accumulator.ready(cluster, now);
-
         /**
          * 步骤三: 标识有哪些topic的元数据没有被拉取到,可能是元数据拉取有问题或者元数据又发生了改变,那么强制更新元数据
          *      这其实是一个异常处理,正常情况下是不会发生的
@@ -202,8 +198,9 @@ public class Sender implements Runnable {
             // The set of topics with unknown leader contains topics with leader election pending as well as
             // topics which may have expired. Add the topic again to metadata to ensure it is included
             // and request metadata update, since there are messages to send to the topic.
-            for (String topic : result.unknownLeaderTopics)
+            for (String topic : result.unknownLeaderTopics) {
                 this.metadata.add(topic);
+            }
             this.metadata.requestUpdate();
         }
 
@@ -211,11 +208,13 @@ public class Sender implements Runnable {
         //如果主机的网络连接没有建立好,就删除readyNodes对应的节点
         Iterator<Node> iter = result.readyNodes.iterator();
         long notReadyTimeout = Long.MAX_VALUE;
-        while (iter.hasNext()) {//遍历每一台将要接收消息的主机
+        //todo 遍历每一台将要接收消息的主机
+        while (iter.hasNext()) {
             Node node = iter.next();
             /**
              * 步骤四: 检查与要发送数据的主机的网络是否已经建立好
              */
+            // NetworkClient#ready 从记录收集器获取准备完毕的节点，并连接所有准备好的节点
             if (!this.client.ready(node, now)) {
                 //如果返回的是false,那么!false就进来了,说明网络连接没有建立好
                 //移除result里面要接收消息的节点
@@ -227,13 +226,10 @@ public class Sender implements Runnable {
 
         /**
          * 步骤五: 将数据整理成一个批处理列表,这些批次将在每个节点的基础上指定适合的大小,然后发送到指定的节点上
-         *
          *      我们要发送的分区数据可能有很多个,
          *      很有可能有一些分区的leader partition 在同一台服务器上
-         *
          *      假设我们有三台服务器,当我们的分区个数大于集群节点的个数时,一定会有多个leader partition 在同一台服务器上面,
          *      所以按照broker进行分组,同一个broker的分区在同一组
-         *
          *      p0:leader --> 0
          *      p1:leader --> 0
          *      p2:leader --> 1
@@ -248,20 +244,22 @@ public class Sender implements Runnable {
          *      kafka从细节上考虑性能优化
          */
         // create produce requests
-        // 创建一个生产请求
-        // 但是,网络没有建立的话,这里的代码是不会执行的
+        // 创建一个生产请求,但是,网络没有建立的话,这里的代码是不会执行的
+        // 读取记录收集器，返回每个主副本节点对应的批次记录列表
+        //
         Map<Integer, List<RecordBatch>> batches = this.accumulator.drain(cluster,//元数据
                                                                          result.readyNodes,//接收消息的节点
                                                                          this.maxRequestSize,//批次的大小
-                                                                         now//当前时间戳
-        );
+                                                                         now);//当前时间戳
+
         if (guaranteeMessageOrder) {//是否保证消息有序
             // Mute all the partitions drained    mute 沉默的  drained 排空
             // 将已经发送数据的分区解除保护
             // 如果batches是空,这里的代码也不会执行
             for (List<RecordBatch> batchList : batches.values()) {
-                for (RecordBatch batch : batchList)
+                for (RecordBatch batch : batchList) {
                     this.accumulator.mutePartition(batch.topicPartition);
+                }
             }
         }
         /**
@@ -276,12 +274,10 @@ public class Sender implements Runnable {
         sensors.updateProduceRequestMetrics(batches);
         /**
          * 步骤七: 创建生产者请求连接,将消息批次存储到请求列表中
-         *
-         * 创建请求
          * 发送消息的时候,有一些分区里的消息会发送到同一台服务器上面,如果是以分区为单位依次发送,那么网络请求会有些频繁
          * 集群中的网络资源是十分珍贵的,所以发往同一个服务器的分区数据,会共用同一个请求,这样就减少了网络请求
-         *
          */
+        //todo 以节点为级别的生产请求列表，即每个节点只有一个客户端请求
         List<ClientRequest> requests = createProduceRequests(batches, now);
         // If we have any nodes that are ready to send + have sendable data, poll with 0 timeout so this can immediately
         // loop and try sending more data. Otherwise, the timeout is determined by nodes that have partitions with data
@@ -294,14 +290,14 @@ public class Sender implements Runnable {
             pollTimeout = 0;
         }
         //TODO 发送请求的操作
-        for (ClientRequest request : requests)
-        /**
-         * 接下来要发送请求了,要把数据发送到服务端
-         * 那么要做的事情,就是在Selector上面绑定一个写数据的事件
-         */
+        for (ClientRequest request : requests){
+            /**
+             * 接下来要发送请求了,要把数据发送到服务端
+             * 那么要做的事情,就是在Selector上面绑定一个写数据的事件
+             */
             //绑定了OP_WRITE事件
             client.send(request, now);
-
+        }
         // if some partitions are already ready to be sent, the select time would be 0;
         // otherwise if some partition already has some data accumulated but not ready yet,
         // the select time will be the time difference between now and its linger expiry time;
@@ -309,16 +305,13 @@ public class Sender implements Runnable {
         //TODO 重点就是去看这个方法
         //就是用的这个方法拉取的元数据
         /**
-         * 步骤八: 真正执行网络操作的就是这个NetWordClient组件
-         *          包括: 发送请求,接收响应(处理响应)
-         *
-         *       拉取元数据信息,靠的就是这段代码
+         * 步骤八: 真正执行网络读写请求的就是这个NetWorkClient组件，
+         *          包括: 发送请求,接收响应(处理响应) 拉取元数据信息,靠的就是这段代码
          */
-        //client对象是KafkaClient类型,它是一个接口对象,它的实现类就是NetworkClient
+        //client对象是KafkaClient类型,它是一个接口对象,它的实现类就是NetworkClient NetworkClient#poll
         //NetworkClient实现类中的poll方法:对socket执行实际的读写操作。
         //当代码第一次进来的时候没有元数据,就是这段代码来获取元数据的
         //当没有建立连接的时候,就在这里进行网络连接
-        //NetworkClient#poll
         this.client.poll(pollTimeout, now);
     }
 
@@ -453,26 +446,32 @@ public class Sender implements Runnable {
      * Transfer the record batches into a list of produce requests on a per-node basis
      * 转移消息批次到对应的节点的请求列表中
      */
+    //已经按照节点分组了
     private List<ClientRequest> createProduceRequests(Map<Integer, List<RecordBatch>> collated, long now) {
         List<ClientRequest> requests = new ArrayList<ClientRequest>(collated.size());
-        for (Map.Entry<Integer, List<RecordBatch>> entry : collated.entrySet())
+        for (Map.Entry<Integer, List<RecordBatch>> entry : collated.entrySet()) {
+            //entry.getKey() 节点id
             requests.add(produceRequest(now, entry.getKey(), acks, requestTimeout, entry.getValue()));
+        }
         return requests;
     }
 
     /**
      * Create a produce request from the given record batches
-     * 根据给定的消息批次创建一个请求
+     * 根据给定的消息批次创建一个请求   destination 发送的目标节点
      */
     private ClientRequest produceRequest(long now, int destination, short acks, int timeout, List<RecordBatch> batches) {
         Map<TopicPartition, ByteBuffer> produceRecordsByPartition = new HashMap<TopicPartition, ByteBuffer>(batches.size());
         final Map<TopicPartition, RecordBatch> recordsByPartition = new HashMap<TopicPartition, RecordBatch>(batches.size());
         for (RecordBatch batch : batches) {
+            //每个RecordBatch 都有唯一的TopicPartition
             TopicPartition tp = batch.topicPartition;
+            // batch.records  MemoryRecords类型  batch.records.buffer = ByteBuffer  java.nio包下
             produceRecordsByPartition.put(tp, batch.records.buffer());
             recordsByPartition.put(tp, batch);
         }
         ProduceRequest request = new ProduceRequest(acks, timeout, produceRecordsByPartition);
+        //todo 创建发送请求 RequestSend extends NetworkSend extends ByteBufferSend
         RequestSend send = new RequestSend(Integer.toString(destination),
                                            this.client.nextRequestHeader(ApiKeys.PRODUCE),
                                            request.toStruct());

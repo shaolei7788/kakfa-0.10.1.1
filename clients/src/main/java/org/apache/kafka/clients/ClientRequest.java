@@ -17,6 +17,7 @@ import org.apache.kafka.common.requests.RequestSend;
 /**
  * A request being sent to the server. This holds both the network send as well as the client-level metadata.
  */
+//客户端请求
 public final class ClientRequest {
 
     private final long createdTimeMs;
