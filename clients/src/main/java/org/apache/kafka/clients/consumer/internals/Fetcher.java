@@ -239,6 +239,7 @@ public class Fetcher<K, V> {
                 long committed = subscriptions.committed(tp).offset();
                 log.debug("Resetting offset for partition {} to the committed offset {}", tp, committed);
                 //todo 指定消费者起始消费位置 将committed 赋给 postition
+                // 将已提交偏移量作为分区状态的拉取偏移量
                 subscriptions.seek(tp, committed);
             }
         }

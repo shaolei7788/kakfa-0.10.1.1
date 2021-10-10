@@ -118,12 +118,9 @@ public class SubscriptionState {
     public void subscribe(Set<String> topics, ConsumerRebalanceListener listener) {
         if (listener == null)
             throw new IllegalArgumentException("RebalanceListener cannot be null");
-
         //todo 设置订阅类型 自动分配分区
         setSubscriptionType(SubscriptionType.AUTO_TOPICS);
-
         this.listener = listener;
-
         changeSubscription(topics);
     }
 

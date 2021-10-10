@@ -60,6 +60,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 /**
  * This class manages the coordination process with the consumer coordinator.
  */
+//todo 消费者协调器 更新分区状态的提交偏移量(消费偏移量)
 public final class ConsumerCoordinator extends AbstractCoordinator {
 
     private static final Logger log = LoggerFactory.getLogger(ConsumerCoordinator.class);
@@ -403,6 +404,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
      * @param partitions The partitions to fetch offsets for
      * @return A map from partition to the committed offset
      */
+    //发送获取偏移量请求给协调者
     public Map<TopicPartition, OffsetAndMetadata> fetchCommittedOffsets(Set<TopicPartition> partitions) {
         while (true) {
             //确保协调者是连接好的
