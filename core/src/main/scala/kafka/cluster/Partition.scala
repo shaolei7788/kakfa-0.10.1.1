@@ -114,7 +114,7 @@ class Partition(val topic: String,
             info("No checkpointed highwatermark is found for partition [%s,%d]".format(topic, partitionId))
           //根据TopicAndPartition 找到对应的HW，再与LEO比较，此值会作为此副本的HW
           val offset = offsetMap.getOrElse(TopicAndPartition(topic, partitionId), 0L).min(log.logEndOffset)
-          //创建Replica 对象并添加到 assignedReplicaMap
+          //todo 创建Replica对象并添加到 assignedReplicaMap
           val localReplica = new Replica(replicaId, this, time, offset, Some(log))
           addReplicaIfNotExists(localReplica)
         } else {
@@ -250,7 +250,7 @@ class Partition(val topic: String,
       // to maintain the decision maker controller's epoch in the zookeeper path
       controllerEpoch = partitionStateInfo.controllerEpoch
       // add replicas that are new
-      //所有的AR副本创建副本
+      //todo 所有的AR副本创建副本
       allReplicas.foreach(r => getOrCreateReplica(r))
       // 更新AR
       (assignedReplicas().map(_.brokerId) -- allReplicas).foreach(removeReplica(_))
