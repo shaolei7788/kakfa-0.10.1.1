@@ -38,7 +38,7 @@ import scala.collection.{Set, mutable}
 import scala.collection.mutable.HashMap
 
 class ControllerChannelManager(controllerContext: ControllerContext, config: KafkaConfig, time: Time, metrics: Metrics, threadNamePrefix: Option[String] = None) extends Logging {
-  //todo 核心 ControllerBrokerStateInfo 表示与一个broker连接的各种信息
+  //todo 核心  key=brokerid  ControllerBrokerStateInfo 表示与一个broker连接的各种信息
   protected val brokerStateInfo = new HashMap[Int, ControllerBrokerStateInfo]
   private val brokerLock = new Object
   this.logIdent = "[Channel manager on controller " + config.brokerId + "]: "
@@ -87,6 +87,7 @@ class ControllerChannelManager(controllerContext: ControllerContext, config: Kaf
       removeExistingBroker(brokerStateInfo(brokerId))
     }
   }
+
 
   private def addNewBroker(broker: Broker) {
     val messageQueue = new LinkedBlockingQueue[QueueItem]
@@ -262,9 +263,11 @@ class RequestSendThread(val controllerId: Int,
 class ControllerBrokerRequestBatch(controller: KafkaController) extends  Logging {
   val controllerContext = controller.controllerContext
   val controllerId: Int = controller.config.brokerId
-  //记录了发往指定brokerd  LeaderIsrAndControllerEpoch 信息
+  //记录了发往指定brokerd  LeaderIsrAndControllerEpoch 请求
   val leaderAndIsrRequestMap = mutable.Map.empty[Int, mutable.Map[TopicPartition, PartitionStateInfo]]
+  //记录了发往指定brokerd  ApiKeys.STOP_REPLICA 请求
   val stopReplicaRequestMap = mutable.Map.empty[Int, Seq[StopReplicaRequestInfo]]
+  //记录了发往指定brokerd  ApiKeys.UPDATE_METADATA_KEY 请求
   val updateMetadataRequestMap = mutable.Map.empty[Int, mutable.Map[TopicPartition, PartitionStateInfo]]
   private val stateChangeLogger = KafkaController.stateChangeLogger
 
@@ -296,9 +299,10 @@ class ControllerBrokerRequestBatch(controller: KafkaController) extends  Logging
     brokerIds.filter(_ >= 0).foreach { brokerId =>
       //getOrElseUpdate 有就获取 没有就创建
       val result = leaderAndIsrRequestMap.getOrElseUpdate(brokerId, mutable.Map.empty)
+      //添加leaderAndIsrRequest 请求
       result.put(topicPartition, PartitionStateInfo(leaderIsrAndControllerEpoch, replicas.toSet))
     }
-    //发送UpdateMetadataRequest给broker
+    //添加UpdateMetadataRequest给broker
     addUpdateMetadataRequestForBrokers(controllerContext.liveOrShuttingDownBrokerIds.toSeq,
                                        Set(TopicAndPartition(topic, partition)))
   }
@@ -344,30 +348,39 @@ class ControllerBrokerRequestBatch(controller: KafkaController) extends  Logging
     }
 
     val filteredPartitions = {
-      val givenPartitions = if (partitions.isEmpty)
+      //判断分区是否为空
+      val givenPartitions = if (partitions.isEmpty) {
         controllerContext.partitionLeadershipInfo.keySet
-      else
+      } else {
         partitions
-      if (controller.deleteTopicManager.partitionsToBeDeleted.isEmpty)
+      }
+      //判断对应的分区是否正在等待删除
+      if (controller.deleteTopicManager.partitionsToBeDeleted.isEmpty) {
         givenPartitions
-      else
+      } else {
         givenPartitions -- controller.deleteTopicManager.partitionsToBeDeleted
+      }
     }
-    if (filteredPartitions.isEmpty)
+    if (filteredPartitions.isEmpty) {
+      // 分区为空
       brokerIds.filter(b => b >= 0).foreach { brokerId =>
+        //获取或者更改updateMetadataRequestMap的value值
         updateMetadataRequestMap.getOrElseUpdate(brokerId, mutable.Map.empty[TopicPartition, PartitionStateInfo])
       }
-    else {
-      //todo  updateMetadataRequestMapFor
+    } else {
+      //分区不为空 调用updateMetadataRequestMapFor
       filteredPartitions.foreach(partition => updateMetadataRequestMapFor(partition, beingDeleted = false))
     }
 
     controller.deleteTopicManager.partitionsToBeDeleted.foreach(partition => updateMetadataRequestMapFor(partition, beingDeleted = true))
   }
 
+  //todo 核心 发送请求给brokers
   def sendRequestsToBrokers(controllerEpoch: Int) {
     try {
+      //todo leaderAndIsr请求集合
       leaderAndIsrRequestMap.foreach { case (broker, partitionStateInfos) =>
+        //todo partitionStateInfos 是一个Map类型 [TopicPartition, PartitionStateInfo]
         partitionStateInfos.foreach { case (topicPartition, state) =>
           //判断请求类型 如果broker == leader 则是leader 否则是 follower
           val typeOfRequest = if (broker == state.leaderIsrAndControllerEpoch.leaderAndIsr.leader) "become-leader" else "become-follower"
@@ -382,11 +395,13 @@ class ControllerBrokerRequestBatch(controller: KafkaController) extends  Logging
           _.getNode(controller.config.interBrokerSecurityProtocol)
         }
         val partitionStates = partitionStateInfos.map { case (topicPartition, partitionStateInfo) =>
+          // LeaderIsrAndControllerEpoch 是样例类
           val LeaderIsrAndControllerEpoch(leaderIsr, controllerEpoch) = partitionStateInfo.leaderIsrAndControllerEpoch
-          val partitionState = new requests.PartitionState(controllerEpoch, leaderIsr.leader,
+          val partitionState : requests.PartitionState = new requests.PartitionState(controllerEpoch, leaderIsr.leader,
             leaderIsr.leaderEpoch, leaderIsr.isr.map(Integer.valueOf).asJava, leaderIsr.zkVersion,
             partitionStateInfo.allReplicas.map(Integer.valueOf).asJava
           )
+          //这是一个map
           topicPartition -> partitionState
         }
         val leaderAndIsrRequest = new LeaderAndIsrRequest(controllerId, controllerEpoch, partitionStates.asJava, leaders.asJava)
@@ -394,6 +409,8 @@ class ControllerBrokerRequestBatch(controller: KafkaController) extends  Logging
         controller.sendRequest(broker, ApiKeys.LEADER_AND_ISR, None, leaderAndIsrRequest, null)
       }
       leaderAndIsrRequestMap.clear()
+
+      //todo updateMetadata请求集合
       updateMetadataRequestMap.foreach { case (broker, partitionStateInfos) =>
 
         partitionStateInfos.foreach(p => stateChangeLogger.trace(("Controller %d epoch %d sending UpdateMetadata request %s " +
@@ -426,10 +443,12 @@ class ControllerBrokerRequestBatch(controller: KafkaController) extends  Logging
             }
             new UpdateMetadataRequest(version, controllerId, controllerEpoch, partitionStates.asJava, liveBrokers.asJava)
           }
-
+        //todo 发送 ApiKeys.UPDATE_METADATA_KEY 请求
         controller.sendRequest(broker, ApiKeys.UPDATE_METADATA_KEY, Some(version), updateMetadataRequest, null)
       }
       updateMetadataRequestMap.clear()
+
+      //todo stopReplica请求集合
       stopReplicaRequestMap.foreach { case (broker, replicaInfoList) =>
         val stopReplicaWithDelete = replicaInfoList.filter(_.deletePartition).map(_.replica).toSet
         val stopReplicaWithoutDelete = replicaInfoList.filterNot(_.deletePartition).map(_.replica).toSet

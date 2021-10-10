@@ -353,8 +353,9 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
     for((topicPartition, assignedReplicas) <- controllerContext.partitionReplicaAssignment) {
       val topic = topicPartition.topic
       val partition = topicPartition.partition
-      //AR
+      //遍历AR
       assignedReplicas.foreach { replicaId =>
+        //创建分区副本样例类
         val partitionAndReplica = PartitionAndReplica(topic, partition, replicaId)
         if (controllerContext.liveBrokerIds.contains(replicaId)) {
           //todo 副本如果存活，状态是上线
@@ -386,6 +387,7 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
         if (hasStarted.get) {
           ControllerStats.leaderElectionTimer.time {
             try {
+              println("=========Broker hasStarted=========")
               // getBrokerInfo 读取 zk上 /brokers/ids/brokerId 节点的数据  curBrokers = Broker
               val curBrokers  = currentBrokerList.map(_.toInt).toSet.flatMap(zkUtils.getBrokerInfo)
               val curBrokerIds = curBrokers.map(_.id)
@@ -394,15 +396,16 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
               val newBrokerIds = curBrokerIds -- liveOrShuttingDownBrokerIds
               //挂了的broker id
               val deadBrokerIds = liveOrShuttingDownBrokerIds -- curBrokerIds
-
+              //新加的Broker集合
               val newBrokers = curBrokers.filter(broker => newBrokerIds(broker.id))
+              //更新上下文的liveBrokers
               controllerContext.liveBrokers = curBrokers
               val newBrokerIdsSorted = newBrokerIds.toSeq.sorted
               val deadBrokerIdsSorted = deadBrokerIds.toSeq.sorted
               val liveBrokerIdsSorted = curBrokerIds.toSeq.sorted
               info("Newly added brokers: %s, deleted brokers: %s, all live brokers: %s"
                 .format(newBrokerIdsSorted.mkString(","), deadBrokerIdsSorted.mkString(","), liveBrokerIdsSorted.mkString(",")))
-              //todo 添加broker
+              //todo 添加broker 获取与一个broker连接的各种信息
               newBrokers.foreach(controllerContext.controllerChannelManager.addBroker)
               deadBrokerIds.foreach(controllerContext.controllerChannelManager.removeBroker)
               if(newBrokerIds.nonEmpty) {

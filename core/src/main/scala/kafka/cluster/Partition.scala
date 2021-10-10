@@ -93,7 +93,7 @@ class Partition(val topic: String,
 
   //根据给定的副本编号获取或创建副本
   def getOrCreateReplica(replicaId: Int = localBrokerId): Replica = {
-    //获取分区指定编号的副本
+    //获取副本编号指定的副本
     val replicaOpt = getReplica(replicaId)
     replicaOpt match {
       //查找到指定的replica对象，直接返回
@@ -243,12 +243,14 @@ class Partition(val topic: String,
    */
   def makeFollower(controllerId: Int, partitionStateInfo: PartitionState, correlationId: Int): Boolean = {
     inWriteLock(leaderIsrUpdateLock) {
+      //AR
       val allReplicas = partitionStateInfo.replicas.asScala.map(_.toInt)
       val newLeaderBrokerId: Int = partitionStateInfo.leader
       // record the epoch of the controller that made the leadership decision. This is useful while updating the isr
       // to maintain the decision maker controller's epoch in the zookeeper path
       controllerEpoch = partitionStateInfo.controllerEpoch
       // add replicas that are new
+      //所有的AR副本创建副本
       allReplicas.foreach(r => getOrCreateReplica(r))
       // 更新AR
       (assignedReplicas().map(_.brokerId) -- allReplicas).foreach(removeReplica(_))

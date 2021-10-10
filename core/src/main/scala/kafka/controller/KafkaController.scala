@@ -345,10 +345,10 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
     }
   }
 
-  // todo 代理节点变成leader时，会调用
+
+  // todo 代理节点变成leader时，会调用       重点：只有成为kafka controller leader 才有下面这些监听器
   def onControllerFailover() {
     if(isRunning) {
-      print("====================================onControllerFailover")
       info("Broker %d starting become controller state transition".format(config.brokerId))
       //todo 从zk读取 controller epoch
       readControllerEpochFromZookeeper()
@@ -356,9 +356,9 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
       incrementControllerEpoch(zkUtils.zkClient)
       //todo 注册重新分配分区监听器 /admin/reassign_partitions
       registerReassignedPartitionsListener()
-      //todo 发生变化时的监听器，更新元数据 监听器
+      //todo 注册ISR变化时的监听器，更新元数据 监听器
       registerIsrChangeNotificationListener()
-      //todo 选举最优的副本作为分区的主副本 监听器
+      //todo 注册最优副本选举监听器  为分区选出最优的主副本
       registerPreferredReplicaElectionListener()
       //todo 注册更改主题的状态器 /brokers/topics  有创建 有删除
       partitionStateMachine.registerListeners()
@@ -372,7 +372,7 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
       // 启动两个状态机
       //初始化副本状态 1 副本如果存活，状态是上线，2 如果不存活状态为 删除失败
       replicaStateMachine.startup()
-      //初始化分区状态
+      //初始化分区状态 如果zk上面由zk信息 controllerContext.partitionLeadershipInfo 就有值， 则有主副本
       // 1 分区有主副本，初始化为上线
       // 2 分区有主副本，但不存活，初始化为下线
       // 3 分区没有主副本，初始化为新建
@@ -385,8 +385,11 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
       //可能触发最优replica选举
       maybeTriggerPreferredReplicaElection()
       /* send partition leadership info to all live brokers */
-      //将分区的主副本和ISR信息发送给所有存货的broker
-      sendUpdateMetadataRequest(controllerContext.liveOrShuttingDownBrokerIds.toSeq)
+      //将分区的主副本和ISR信息发送给所有存活的broker
+      //优化操作  liveOrShuttingDownBrokerIds 为空 不用发送请求
+      if(controllerContext.liveOrShuttingDownBrokerIds.size > 0 ){
+        sendUpdateMetadataRequest(controllerContext.liveOrShuttingDownBrokerIds.toSeq)
+      }
       //检测是否开启了主副本的自动平衡，如果开启了，启动一个线程检查分区平衡的线程 默认开启
       if (config.autoLeaderRebalanceEnable) {
         info("starting the partition rebalance scheduler")
@@ -468,13 +471,14 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
   //todo broker上线后调用
   def onBrokerStartup(newBrokers: Seq[Int]) {
     info("New broker startup callback for %s".format(newBrokers.mkString(",")))
+    //新上线的broker集合
     val newBrokersSet = newBrokers.toSet
     // 发送 更新元数据 请求给所有代理节点，让旧节点在这次更新时知道有这些节点加入
     sendUpdateMetadataRequest(controllerContext.liveOrShuttingDownBrokerIds.toSeq)
     // the very first thing to do when a new broker comes up is send it the entire list of partitions that it is
     // supposed to host. Based on that the broker starts the high watermark threads for the input list of partitions
     // [Topic=order,Partition=2,Replica=0]
-    // 获取指定broker中保存的所有副本
+    //todo 获取指定broker中保存的所有副本
     val allReplicasOnNewBrokers = controllerContext.replicasOnBrokers(newBrokersSet)
     //todo 上线节点上的所有副本转换为上线
     replicaStateMachine.handleStateChanges(allReplicasOnNewBrokers, OnlineReplica)
@@ -485,6 +489,7 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
     val partitionsWithReplicasOnNewBrokers = controllerContext.partitionsBeingReassigned.filter {
       case (topicAndPartition, reassignmentContext) => reassignmentContext.newReplicas.exists(newBrokersSet.contains(_))
     }
+    //重新分配分区
     partitionsWithReplicasOnNewBrokers.foreach(p => onPartitionReassignment(p._1, p._2))
     // check if topic deletion needs to be resumed. If at least one replica that belongs to the topic being deleted exists
     // on the newly restarted brokers, there is a chance that topic deletion can resume
@@ -632,6 +637,7 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
     if (!areReplicasInIsr(topicAndPartition.topic, topicAndPartition.partition, reassignedReplicas)) {
       info("New replicas %s for partition %s being ".format(reassignedReplicas.mkString(","), topicAndPartition) +
         "reassigned not yet caught up with the leader")
+      // 不在OAR中的副本
       val newReplicasNotInOldReplicaList = reassignedReplicas.toSet -- controllerContext.partitionReplicaAssignment(topicAndPartition).toSet
       val newAndOldReplicas = (reassignedPartitionContext.newReplicas ++ controllerContext.partitionReplicaAssignment(topicAndPartition)).toSet
       //1. Update AR in ZK with OAR + RAR.
@@ -827,12 +833,12 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
     controllerContext.liveBrokers = zkUtils.getAllBrokersInCluster().toSet
     //从zk读取数据 获取topic       (first,second)
     controllerContext.allTopics = zkUtils.getAllTopics().toSet
-    //有个赋值操作 从zk读取数据 TopicAndPartition, Seq[Int]  key = first-0   value = (0,1,2) 副本编号集合
+    //todo 有个赋值操作 从zk读取数据 TopicAndPartition, Seq[Int]  key = first-0   value = (0,1,2) 副本编号集合
     controllerContext.partitionReplicaAssignment = zkUtils.getReplicaAssignmentForTopics(controllerContext.allTopics.toSeq)
     controllerContext.partitionLeadershipInfo = new mutable.HashMap[TopicAndPartition, LeaderIsrAndControllerEpoch]
     controllerContext.shuttingDownBrokerIds = mutable.Set.empty[Int]
     // update the leader and isr cache for all existing partitions from Zookeeper
-    // 会从zk读取主题分区的leader信息 服务刚启动是没有leader信息
+    //todo 会从zk读取主题分区的leader信息 有个赋值操作 controllerContext.partitionLeadershipInfo
     updateLeaderAndIsrCache()
     // start the channel manager
     //todo 启动通道管理器 建立到集群各个broker的网络连接
@@ -1130,7 +1136,9 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
   def sendUpdateMetadataRequest(brokers: Seq[Int], partitions: Set[TopicAndPartition] = Set.empty[TopicAndPartition]) {
     try {
       brokerRequestBatch.newBatch()
+      //添加更新元数据请求
       brokerRequestBatch.addUpdateMetadataRequestForBrokers(brokers, partitions)
+      //发送请求
       brokerRequestBatch.sendRequestsToBrokers(epoch)
     } catch {
       case e : IllegalStateException => {

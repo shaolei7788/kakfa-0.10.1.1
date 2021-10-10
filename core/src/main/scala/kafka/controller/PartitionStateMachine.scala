@@ -336,7 +336,7 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
       var replicasForThisPartition: Seq[Int] = Seq.empty[Int]
       //判断更新zk path 是否成功
       while(!zookeeperPathUpdateSucceeded) {
-        //todo 从分区的状态节点(zk)读取当前的主副本,ISR集合
+        //todo 从分区的状态节点(zk)读取当前的主副本,ISR集合 /brokers/topics/partitions/0/state
         val currentLeaderIsrAndEpoch = getLeaderIsrAndEpochOrThrowException(topic, partition)
         val currentLeaderAndIsr = currentLeaderIsrAndEpoch.leaderAndIsr
         val controllerEpoch = currentLeaderIsrAndEpoch.controllerEpoch
@@ -354,7 +354,7 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
         // 选举分区的主副本，这个副本必须是存活的
         // leaderAndIsr 主副本 ISR replicas 存活的副本
         val (leaderAndIsr, replicas) = leaderSelector.selectLeader(topicAndPartition, currentLeaderAndIsr)
-        //todo 将最新的主副本和ISR信息更新到zk的分区状态节点
+        //todo 将最新的主副本和ISR信息更新到zk的分区状态节点 更新path = /brokers/topics/second/partitions/1/state
         val (updateSucceeded, newVersion) = ReplicationUtils.updateLeaderAndIsr(zkUtils, topic, partition,
           leaderAndIsr, controller.epoch, currentLeaderAndIsr.zkVersion)
         newLeaderAndIsr = leaderAndIsr
@@ -362,7 +362,7 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
         zookeeperPathUpdateSucceeded = updateSucceeded
         replicasForThisPartition = replicas
       }
-      //将最新的主副本和ISR信息更新到zk的分区状态节点
+      //封装newLeaderAndIsr和epoch信息
       val newLeaderIsrAndControllerEpoch = new LeaderIsrAndControllerEpoch(newLeaderAndIsr, controller.epoch)
       //todo 更新上下文的分区缓存信息
       controllerContext.partitionLeadershipInfo.put(TopicAndPartition(topic, partition), newLeaderIsrAndControllerEpoch)
