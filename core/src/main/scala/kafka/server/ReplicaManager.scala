@@ -102,6 +102,7 @@ object ReplicaManager {
 // 服务端创建日志读取日志，管理日志都只能通过日志管理器完成，实际上，日志管理器会传递给副本管理器，
 // 而副本管理器管理所有的分区，分区管理所有的副本，每个副本对应一个日志，分区在创建副本时才会创建日志，每个分区都需要持有副本管理器的引用，才能通过日志管理器创建日志
 // 副本管理器将日志管理器这个全局变量传递了它所管理的每个分区,副本管理器的每个分区通过日志管理器，为每个副本创建对应的日志
+//
 class ReplicaManager(val config: KafkaConfig,
                      metrics: Metrics,
                      time: Time,
@@ -109,7 +110,7 @@ class ReplicaManager(val config: KafkaConfig,
                      val zkUtils: ZkUtils,
                      //KafkaScheduler 执行ReplicaManager的周期性任务 1 highwatermark-checkpoint isr-expiration isr-change-propagation
                      scheduler: Scheduler,
-                     val logManager: LogManager,//对分区的读写操作都是委托给底层的日志存储子系统
+                     val logManager: LogManager,//todo 日志管理器 对分区的读写操作都是委托给底层的日志存储子系统
                      val isShuttingDown: AtomicBoolean,
                      quotaManager: ReplicationQuotaManager,
                      //threadNamePrefix 默认是None
@@ -130,6 +131,7 @@ class ReplicaManager(val config: KafkaConfig,
 
   //todo 管理多个ReplicaFetcherThread线程，ReplicaFetcherThread线程会向leader副本发送FetchRequest请求来获取消息，
   // 实现folloer副本与leader副本同步
+  // 会管理所有备份副本对应的分区
   val replicaFetcherManager = new ReplicaFetcherManager(config, this, metrics, jTime, threadNamePrefix, quotaManager)
 
   private val highWatermarkCheckPointThreadStarted = new AtomicBoolean(false)
@@ -775,12 +777,12 @@ class ReplicaManager(val config: KafkaConfig,
         val partitionsToBeFollower = partitionState -- partitionsTobeLeader.keys
 
         val partitionsBecomeLeader = if (partitionsTobeLeader.nonEmpty) {
-          //todo 将指定分区的local replica 切换为leader
+          //todo 为多个分区创建主副本
           makeLeaders(controllerId, controllerEpoch, partitionsTobeLeader, correlationId, responseMap)
         } else
           Set.empty[Partition]
         val partitionsBecomeFollower = if (partitionsToBeFollower.nonEmpty){
-          //todo 将指定分区的local replica 切换为follower
+          //todo 为多个分区创建follower副本
           makeFollowers(controllerId, controllerEpoch, partitionsToBeFollower, correlationId, responseMap, metadataCache)
         }
         else
@@ -815,6 +817,7 @@ class ReplicaManager(val config: KafkaConfig,
    *
    *  TODO: the above may need to be fixed later
    */
+  //TODO 为多个分区创建主副本
   private def makeLeaders(controllerId: Int,
                           epoch: Int,
                           partitionState: Map[Partition, PartitionState],
@@ -832,9 +835,10 @@ class ReplicaManager(val config: KafkaConfig,
 
     val partitionsToMakeLeaders: mutable.Set[Partition] = mutable.Set()
     try {
-      //todo 在此broker上的副本之前可能是follower,所以要先暂停对这些副本的fetch操作
+      //todo 转为主副本时，不再需要拉取数据，拉取管理器移除该分区
       replicaFetcherManager.removeFetcherForPartitions(partitionState.keySet.map(p => new TopicPartition(p.topic, p.partitionId)))
       // Update the partition information to be the leader
+      //遍历要创建主副本的分区
       partitionState.foreach{ case (partition, partitionStateInfo) =>
         //todo 将分区的local replica 切换为leader副本
         if (partition.makeLeader(controllerId, partitionStateInfo, correlationId)) {
@@ -889,6 +893,7 @@ class ReplicaManager(val config: KafkaConfig,
    * the error message will be set on each partition since we do not know which partition caused it. Otherwise,
    * return the set of partitions that are made follower due to this method
    */
+  //todo 为多个分区创建follower副本
   private def makeFollowers(controllerId: Int,
                             epoch: Int,
                             partitionState: Map[Partition, PartitionState],
@@ -935,16 +940,18 @@ class ReplicaManager(val config: KafkaConfig,
         }
       }
 
+      //todo 将分区从拉取管理器中移除
       replicaFetcherManager.removeFetcherForPartitions(partitionsToMakeFollower.map(p => new TopicPartition(p.topic, p.partitionId)))
       partitionsToMakeFollower.foreach { partition =>
         stateChangeLogger.trace(("Broker %d stopped fetchers as part of become-follower request from controller " +
           "%d epoch %d with correlation id %d for partition %s")
           .format(localBrokerId, controllerId, epoch, correlationId, TopicAndPartition(partition.topic, partition.partitionId)))
       }
-
+      //截断日志到副本的最高位
       logManager.truncateTo(partitionsToMakeFollower.map(partition => (new TopicAndPartition(partition), partition.getOrCreateReplica().highWatermark.messageOffset)).toMap)
       partitionsToMakeFollower.foreach { partition =>
         val topicPartitionOperationKey = new TopicPartitionOperationKey(partition.topic, partition.partitionId)
+        //尝试完成延迟的请求
         tryCompleteDelayedProduce(topicPartitionOperationKey)
         tryCompleteDelayedFetch(topicPartitionOperationKey)
       }
@@ -961,14 +968,13 @@ class ReplicaManager(val config: KafkaConfig,
             "controller %d epoch %d for partition [%s,%d] since it is shutting down").format(localBrokerId, correlationId,
             controllerId, epoch, partition.topic, partition.partitionId))
         }
-      }
-      else {
+      } else {
         // we do not need to check if the leader exists again since this has been done at the beginning of this process
         val partitionsToMakeFollowerWithLeaderAndOffset = partitionsToMakeFollower.map(partition =>
           new TopicPartition(partition.topic, partition.partitionId) -> BrokerAndInitialOffset(
             metadataCache.getAliveBrokers.find(_.id == partition.leaderReplicaIdOpt.get).get.getBrokerEndPoint(config.interBrokerSecurityProtocol),
             partition.getReplica().get.logEndOffset.messageOffset)).toMap
-        //todo fetcher从leader 拉取分区的数据
+        //todo 添加分区到拉取管理器
         replicaFetcherManager.addFetcherForPartitions(partitionsToMakeFollowerWithLeaderAndOffset)
 
         partitionsToMakeFollower.foreach { partition =>

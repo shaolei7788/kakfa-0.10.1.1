@@ -104,6 +104,7 @@ abstract class AbstractFetcherManager(protected val name: String, clientId: Stri
       "[" + topicAndPartition + ", initOffset " + brokerAndInitialOffset.initOffset + " to broker " + brokerAndInitialOffset.broker + "] "}))
   }
 
+  //拉取管理器移除该分区
   def removeFetcherForPartitions(partitions: Set[TopicPartition]) {
     mapLock synchronized {
       for ((key, fetcher) <- fetcherThreadMap)

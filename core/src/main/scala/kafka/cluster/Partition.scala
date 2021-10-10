@@ -52,7 +52,7 @@ class Partition(val topic: String,
   private val logManager = replicaManager.logManager
 
   private val zkUtils = replicaManager.zkUtils
-  //维护了该分区的全部副本集合 AR
+  //维护了该分区的全部副本集合 AR  key=replicaId value = Replica
   private val assignedReplicaMap = new Pool[Int, Replica]
   // The read lock is only required when multiple reads are executed and needs to be in a consistent manner
   private val leaderIsrUpdateLock = new ReentrantReadWriteLock()
@@ -202,7 +202,7 @@ class Partition(val topic: String,
       controllerEpoch = partitionStateInfo.controllerEpoch
       // 创建AR集合中所有副本对应的replica对象
       allReplicas.foreach(replica => getOrCreateReplica(replica))
-      //todo 获取ISR集合
+      //todo 获取ISR集合  主副本才有ISR信息
       val newInSyncReplicas = partitionStateInfo.isr.asScala.map(r => getOrCreateReplica(r)).toSet
       // 移除不在allReplicas里的副本
       (assignedReplicas().map(_.brokerId) -- allReplicas).foreach(removeReplica(_))
