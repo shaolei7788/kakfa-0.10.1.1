@@ -45,37 +45,42 @@ public class RangeAssignor extends AbstractPartitionAssignor {
         return "range";
     }
 
+    //获取每个topic有那些消费者
     private Map<String, List<String>> consumersPerTopic(Map<String, List<String>> consumerMetadata) {
         Map<String, List<String>> res = new HashMap<>();
         for (Map.Entry<String, List<String>> subscriptionEntry : consumerMetadata.entrySet()) {
             String consumerId = subscriptionEntry.getKey();
-            for (String topic : subscriptionEntry.getValue())
+            for (String topic : subscriptionEntry.getValue()) {
                 put(res, topic, consumerId);
+            }
         }
         return res;
     }
 
+    //执行分区分配  partitionsPerTopic 每个主题有多少分区  subscriptions 每个消费者的订阅主题
     @Override
     public Map<String, List<TopicPartition>> assign(Map<String, Integer> partitionsPerTopic,
                                                     Map<String, List<String>> subscriptions) {
+        //获取每个topic有那些消费者
         Map<String, List<String>> consumersPerTopic = consumersPerTopic(subscriptions);
         Map<String, List<TopicPartition>> assignment = new HashMap<>();
-        for (String memberId : subscriptions.keySet())
+        for (String memberId : subscriptions.keySet()) {
+            //给每个消费者初始化分区的集合
             assignment.put(memberId, new ArrayList<TopicPartition>());
-
+        }
+        //todo 针对每个主题分区而言  平均分给所有消费者  主题分区数 % 消费者个数 = 余数  如果除不尽 前余数个消费者分得  主题分区数 / 消费者个数 + 1
         for (Map.Entry<String, List<String>> topicEntry : consumersPerTopic.entrySet()) {
             String topic = topicEntry.getKey();
+            //消费者集合
             List<String> consumersForTopic = topicEntry.getValue();
-
+            //分区数量
             Integer numPartitionsForTopic = partitionsPerTopic.get(topic);
             if (numPartitionsForTopic == null)
                 continue;
-
+            //consumersForTopic 排序
             Collections.sort(consumersForTopic);
-
             int numPartitionsPerConsumer = numPartitionsForTopic / consumersForTopic.size();
             int consumersWithExtraPartition = numPartitionsForTopic % consumersForTopic.size();
-
             List<TopicPartition> partitions = AbstractPartitionAssignor.partitions(topic, numPartitionsForTopic);
             for (int i = 0, n = consumersForTopic.size(); i < n; i++) {
                 int start = numPartitionsPerConsumer * i + Math.min(i, consumersWithExtraPartition);

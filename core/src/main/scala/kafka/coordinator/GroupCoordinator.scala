@@ -698,12 +698,10 @@ class GroupCoordinator(val brokerId: Int,
         group.remove(failedMember.memberId)
         // TODO: cut the socket connection to the client
       }
-
       if (!group.is(Dead)) {
         group.initNextGeneration()
         if (group.is(Empty)) {
           info(s"Group ${group.groupId} with generation ${group.generationId} is now empty")
-
           delayedStore = groupManager.prepareStoreGroup(group, Map.empty, error => {
             if (error != Errors.NONE) {
               // we failed to write the empty group metadata. If the broker fails before another rebalance,
@@ -718,8 +716,9 @@ class GroupCoordinator(val brokerId: Int,
           // trigger the awaiting join group response callback for all the members after rebalancing
           for (member <- group.allMemberMetadata) {
             assert(member.awaitingJoinCallback != null)
+            //创建joinResult 对象
             val joinResult = JoinGroupResult(
-              members=if (member.memberId == group.leaderId) { group.currentMemberMetadata } else { Map.empty },
+              members= if (member.memberId == group.leaderId) { group.currentMemberMetadata } else { Map.empty },
               memberId=member.memberId,
               generationId=group.generationId,
               subProtocol=group.protocol,

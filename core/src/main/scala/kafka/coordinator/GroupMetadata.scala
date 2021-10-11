@@ -251,6 +251,7 @@ private[coordinator] class GroupMetadata(val groupId: String, initialState: Grou
   def currentMemberMetadata: Map[String, Array[Byte]] = {
     if (is(Dead) || is(PreparingRebalance))
       throw new IllegalStateException("Cannot obtain member metadata for group in state %s".format(state))
+    //members = String, MemberMetadata
     members.map{ case (memberId, memberMetadata) => (memberId, memberMetadata.metadata(protocol))}.toMap
   }
 

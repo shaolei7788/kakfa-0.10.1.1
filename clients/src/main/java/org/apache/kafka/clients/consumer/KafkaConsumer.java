@@ -1047,7 +1047,6 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
             //todo 更新这些分区的拉取偏移量
             updateFetchPositions(miss);
         }
-
         //todo 会将completedFetches 中的消息进行解析得到record集合并返回
         Map<TopicPartition, List<ConsumerRecord<K, V>>> records = fetcher.fetchedRecords();//todo 并行模式 x 1 1
         if (!records.isEmpty()){
@@ -1056,7 +1055,6 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
         }
         //TODO 发送拉取请求 里面有回调函数
         fetcher.sendFetches();        //todo 并行模式 1 x x
-
         long now = time.milliseconds();
         long pollTimeout = Math.min(coordinator.timeToNextPoll(now), timeout);
 

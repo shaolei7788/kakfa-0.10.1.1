@@ -1,0 +1,92 @@
+NetworkClient
+	RequestCompletionHandler callback = clientRequest.callback();
+	response ClientResponse类型
+	callback.onComplete(response);
+	生产者 RequestCompletionHandler
+	消费者 RequestFutureCompletionHandler
+
+	//步骤1
+	callback.onComplete(response);
+
+	//步骤2 RequestFutureCompletionHandler#onComplete
+	public void onComplete(ClientResponse response) {
+		this.response = response;
+		pendingCompletion.add(this);
+	}
+
+	//步骤3 RequestFutureCompletionHandler#fireCompletion
+	RequestFutureCompletionHandler completionHandler = pendingCompletion.poll();
+	completionHandler.fireCompletion();
+
+	//步骤4 RequestFutureCompletionHandler.future.complete
+	public void fireCompletion() {
+		future.complete(response);
+	}
+
+	//步骤5 RequestFutureCompletionHandler.future.fireSuccess
+	public void complete(T value) {
+        fireSuccess();
+    }
+
+	//步骤6 RequestFutureCompletionHandler.future.fireSuccess
+	// RequestFutureCompletionHandler.future 是RequestFuture<ClientResponse> send
+	private void fireSuccess() {
+		//响应结果
+        T value = value();
+        while (true) {
+            RequestFutureListener<T> listener = listeners.poll();
+            if (listener == null)
+                break;
+			//调用监听器的onSuccess
+            listener.onSuccess(value);
+        }
+    }
+
+	//步骤7 adapter.onSuccess
+	RequestFutureListener<T> requestFutureListener = new RequestFutureListener<T>() {
+		public void onSuccess(T value) {
+			//adapter = JoinGroupResponseHandler
+			// final RequestFuture<S> adapted = new RequestFuture<>();  // 也就是compose
+			adapter.onSuccess(value, adapted);
+		}
+	};
+
+	//步骤8 JoinGroupResponseHandler.onSuccess  CoordinatorResponseHandler.handle
+	public void onSuccess(ClientResponse clientResponse, RequestFuture<T> future) {
+		this.response = clientResponse;
+		R responseObj = parse(clientResponse);
+		handle(responseObj, future);
+	}
+
+	//步骤9 JoinGroupResponseHandler.handle
+	public void handle(JoinGroupResponse joinResponse, RequestFuture<ByteBuffer> future) {
+        onJoinLeader(joinResponse).chain(future);
+    }
+
+	//又按上面来一次
+	SyncGroupResponseHandler.handle
+	//future是SyncGroup的compose  是 onJoinLeader(joinResponse)方法返回的对象
+	future.complete()
+	//future.fireSuccess
+	fireSuccess();
+	//触发监听器 requestFuture.chain(future)
+	// requestFuture是SyncGroup的compose  绑定了一个监听器 就是这个listener
+	listener.onSuccess(value)
+	//future是SyncGroup的compose  调用complete 又触发监听器
+	future.complete(value);
+	// SyncGroup的compose = future = joinFuture
+	joinFuture = sendJoinGroupRequest();
+	//给compose绑定监听器
+	joinFuture.addListener(new RequestFutureListener<ByteBuffer>() {
+		@Override
+		public void onSuccess(ByteBuffer value) {
+			// handle join completion in the callback so that the callback will be invoked
+			// even if the consumer is woken up before finishing the rebalance
+			synchronized (AbstractCoordinator.this) {
+				log.info("Successfully joined group {} with generation {}", groupId, generation.generationId);
+				state = MemberState.STABLE;
+				if (heartbeatThread != null)
+					heartbeatThread.enable();
+			}
+		}
+	});

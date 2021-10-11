@@ -59,7 +59,7 @@ private[coordinator] class MemberMetadata(val memberId: String,
                                           val rebalanceTimeoutMs: Int,
                                           val sessionTimeoutMs: Int,
                                           val protocolType: String,
-                                         //支持的协议集
+                                          //支持的协议集
                                           var supportedProtocols: List[(String, Array[Byte])]) {
 
   //消费者分区分配的结果

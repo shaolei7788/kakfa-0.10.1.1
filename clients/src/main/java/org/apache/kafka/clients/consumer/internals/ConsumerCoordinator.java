@@ -310,36 +310,32 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
         for (Map.Entry<String, ByteBuffer> subscriptionEntry : allSubscriptions.entrySet()) {
             //反序列化消费者的订阅信息
             Subscription subscription = ConsumerProtocol.deserializeSubscription(subscriptionEntry.getValue());
+            // subscriptionEntry.getKey() 是memberid
             subscriptions.put(subscriptionEntry.getKey(), subscription);
             allSubscribedTopics.addAll(subscription.topics());
         }
-
-        // the leader will begin watching for changes to any of the topics the group is interested in,
-        // which ensures that all metadata changes will eventually be seen
+        //更新消费组订阅的主题
         this.subscriptions.groupSubscribe(allSubscribedTopics);
+        //更新集群订阅的主题
         metadata.setTopics(this.subscriptions.groupSubscription());
-
         // update metadata (if needed) and keep track of the metadata used for assignment so that
         // we can check after rebalance completion whether anything has changed
         client.ensureFreshMetadata();
 
         isLeader = true;
         assignmentSnapshot = metadataSnapshot;
+        log.debug("Performing assignment for group {} using strategy {} with subscriptions {}", groupId, assignor.name(), subscriptions);
 
-        log.debug("Performing assignment for group {} using strategy {} with subscriptions {}",
-                groupId, assignor.name(), subscriptions);
-
-        //todo 进行分区分配 metadata.fetch() = Cluster subscriptions 所有的消费者信息
+        //todo 进行分区分配 metadata.fetch() = Cluster    subscriptions 所有的消费者信息
+        // key是每个消费者id   Assignment是分配的结果
         Map<String, Assignment> assignment = assignor.assign(metadata.fetch(), subscriptions);
-
         log.debug("Finished assignment for group {}: {}", groupId, assignment);
-
         Map<String, ByteBuffer> groupAssignment = new HashMap<>();
         for (Map.Entry<String, Assignment> assignmentEntry : assignment.entrySet()) {
+            //对Assignment进行序列化
             ByteBuffer buffer = ConsumerProtocol.serializeAssignment(assignmentEntry.getValue());
             groupAssignment.put(assignmentEntry.getKey(), buffer);
         }
-
         return groupAssignment;
     }
 

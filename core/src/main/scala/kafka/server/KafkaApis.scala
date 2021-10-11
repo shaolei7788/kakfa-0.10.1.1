@@ -1069,6 +1069,7 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
     requestChannel.sendResponse(new RequestChannel.Response(request, new ResponseSend(request.connectionId, responseHeader, responseBody)))
   }
 
+  //消费者初次加入消费者时，memberid是 UNKNOWN_MEMBER,协调者处理每个消费发送的加入组请求，会为每个消费者指定唯一的消费者成员编号
   def handleJoinGroupRequest(request: RequestChannel.Request) {
     import JavaConversions._
     val joinGroupRequest = request.body.asInstanceOf[JoinGroupRequest]

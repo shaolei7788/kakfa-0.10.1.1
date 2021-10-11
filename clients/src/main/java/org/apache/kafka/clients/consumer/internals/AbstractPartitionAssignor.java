@@ -48,24 +48,27 @@ public abstract class AbstractPartitionAssignor implements PartitionAssignor {
 
     @Override
     public Map<String, Assignment> assign(Cluster metadata, Map<String, Subscription> subscriptions) {
+        //所有订阅的主题
         Set<String> allSubscribedTopics = new HashSet<>();
+        //每个成员id 订阅了那些topic
         Map<String, List<String>> topicSubscriptions = new HashMap<>();
         for (Map.Entry<String, Subscription> subscriptionEntry : subscriptions.entrySet()) {
             List<String> topics = subscriptionEntry.getValue().topics();
             allSubscribedTopics.addAll(topics);
+            // subscriptionEntry.getKey() memberid
             topicSubscriptions.put(subscriptionEntry.getKey(), topics);
         }
-
+        //每个topic的分区的数量
         Map<String, Integer> partitionsPerTopic = new HashMap<>();
         for (String topic : allSubscribedTopics) {
-            //获取指定分区的数量
+            //获取指定topic的分区的数量
             Integer numPartitions = metadata.partitionCountForTopic(topic);
             if (numPartitions != null && numPartitions > 0)
                 partitionsPerTopic.put(topic, numPartitions);
             else
                 log.debug("Skipping assignment for topic {} since no metadata is available", topic);
         }
-        //todo
+        //todo 执行分区分配 key是消费者id  value是分区分配的结果
         Map<String, List<TopicPartition>> rawAssignments = assign(partitionsPerTopic, topicSubscriptions);
 
         // this class has maintains no user data, so just wrap the results
@@ -80,6 +83,7 @@ public abstract class AbstractPartitionAssignor implements PartitionAssignor {
         // this assignor maintains no internal state, so nothing to do
     }
 
+    // key = topic   value = consumerId
     protected static <K, V> void put(Map<K, List<V>> map, K key, V value) {
         List<V> list = map.get(key);
         if (list == null) {

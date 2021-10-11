@@ -173,6 +173,7 @@ public class RequestFuture<T> implements ConsumerNetworkClient.PollCondition {
     // todo 公共方法
     //adapter =  GroupCoordinatorResponseHandler
     //adapter = OffsetCommitResponseHandler
+    //adapter = JoinGroupResponseHandler
     public <S> RequestFuture<S> compose(final RequestFutureAdapter<T, S> adapter) {
         final RequestFuture<S> adapted = new RequestFuture<>();
         //todo 在当前RequestFuture上添加监听器

@@ -323,6 +323,7 @@ public abstract class AbstractCoordinator implements Closeable {
             }
             //todo 核心 发送加入group请求
             RequestFuture<ByteBuffer> future = initiateJoinGroup();
+            //同步阻塞
             client.poll(future);
             //将 joinFuture = null
             resetJoinGroupFuture();
@@ -363,7 +364,7 @@ public abstract class AbstractCoordinator implements Closeable {
             //todo 1 发送加入group请求 ApiKeys.JOIN_GROUP 里面有个回调函数 响应信息会返回那个是leader consumer
             //todo 2 发送加入group请求 ApiKeys.SYNC_GROUP 里面有个回调函数 leader会制定分区分配策略并发送给GroupCoordinator
             joinFuture = sendJoinGroupRequest();
-
+            //给compose绑定监听器
             joinFuture.addListener(new RequestFutureListener<ByteBuffer>() {
                 @Override
                 public void onSuccess(ByteBuffer value) {
@@ -411,21 +412,24 @@ public abstract class AbstractCoordinator implements Closeable {
                 metadata());
 
         log.debug("Sending JoinGroup ({}) to coordinator {}", request, this.coordinator);
-        //todo 发送ApiKeys.JOIN_GROUP请求
+        //todo 发送ApiKeys.JOIN_GROUP请求  send是 RequestFutureCompletionHandler类的future对象
         RequestFuture<ClientResponse> send = client.send(coordinator, ApiKeys.JOIN_GROUP, request);
         //todo 回调函数处理上面的响应信息，响应信息会返回那个是leader consumer，然后发送ApiKeys.SYNC_GROUP 请求
         RequestFuture<ByteBuffer> compose = send.compose(new JoinGroupResponseHandler());
+        //todo 返回的是adapted对象 RequestFuture类型
         return compose;
 
     }
 
     private class JoinGroupResponseHandler extends CoordinatorResponseHandler<JoinGroupResponse, ByteBuffer> {
 
+        //将ClientResponse对象解析成JoinGroupResponse
         @Override
         public JoinGroupResponse parse(ClientResponse response) {
             return new JoinGroupResponse(response.responseBody());
         }
 
+        // future 就是 RequestFuture<ByteBuffer> compose
         @Override
         public void handle(JoinGroupResponse joinResponse, RequestFuture<ByteBuffer> future) {
             Errors error = Errors.forCode(joinResponse.errorCode());
@@ -445,7 +449,9 @@ public abstract class AbstractCoordinator implements Closeable {
                         AbstractCoordinator.this.rejoinNeeded = false;
                         if (joinResponse.isLeader()) {
                             //todo 是leader 发送带分区分配请求消息 里面又发送了一个请求
-                            onJoinLeader(joinResponse).chain(future);
+                            RequestFuture<ByteBuffer> requestFuture = onJoinLeader(joinResponse);
+                            //给requestFuture绑定了一个监听器 即requestFuture请求的结果给future 这个future 是joinGroup的compose
+                            requestFuture.chain(future);
                         } else {
                             //todo follower 发送不带分区分配请求消息 里面又发送了一个请求
                             onJoinFollower().chain(future);
@@ -508,30 +514,28 @@ public abstract class AbstractCoordinator implements Closeable {
     private RequestFuture<ByteBuffer> sendSyncGroupRequest(SyncGroupRequest request) {
         if (coordinatorUnknown())
             return RequestFuture.coordinatorNotAvailable();
+        //todo 发送ApiKeys.SYNC_GROUP请求
         RequestFuture<ClientResponse> send = client.send(coordinator, ApiKeys.SYNC_GROUP, request);
-        return send.compose(new SyncGroupResponseHandler());
-
+        RequestFuture<ByteBuffer> compose = send.compose(new SyncGroupResponseHandler());
+        return compose;
     }
 
     private class SyncGroupResponseHandler extends CoordinatorResponseHandler<SyncGroupResponse, ByteBuffer> {
-
         @Override
         public SyncGroupResponse parse(ClientResponse response) {
             return new SyncGroupResponse(response.responseBody());
         }
 
         @Override
-        public void handle(SyncGroupResponse syncResponse,
-                           RequestFuture<ByteBuffer> future) {
+        public void handle(SyncGroupResponse syncResponse, RequestFuture<ByteBuffer> future) {
             Errors error = Errors.forCode(syncResponse.errorCode());
             if (error == Errors.NONE) {
                 //没有错误
                 sensors.syncLatency.record(response.requestLatencyMs());
-                //todo 传播分区分配结果
+                //todo 传播分区分配结果  future 是SyncGroup的compose
                 future.complete(syncResponse.memberAssignment());
             } else {
                 requestRejoin();
-
                 if (error == Errors.GROUP_AUTHORIZATION_FAILED) {
                     future.raise(new GroupAuthorizationException(groupId));
                 } else if (error == Errors.REBALANCE_IN_PROGRESS) {
