@@ -50,6 +50,7 @@ case class MemberSummary(memberId: String,
  *                            is kept in metadata until the leader provides the group assignment
  *                            and the group transitions to stable
  */
+//消费者成员元数据
 @nonthreadsafe
 private[coordinator] class MemberMetadata(val memberId: String,
                                           val groupId: String,
@@ -58,11 +59,16 @@ private[coordinator] class MemberMetadata(val memberId: String,
                                           val rebalanceTimeoutMs: Int,
                                           val sessionTimeoutMs: Int,
                                           val protocolType: String,
+                                         //支持的协议集
                                           var supportedProtocols: List[(String, Array[Byte])]) {
 
+  //消费者分区分配的结果
   var assignment: Array[Byte] = Array.empty[Byte]
+  //加入组的回调方法
   var awaitingJoinCallback: JoinGroupResult => Unit = null
+  //同步组的回调方法
   var awaitingSyncCallback: (Array[Byte], Short) => Unit = null
+  //记录了消费者最近一次发送心跳的时间
   var latestHeartbeat: Long = -1
   var isLeaving: Boolean = false
 

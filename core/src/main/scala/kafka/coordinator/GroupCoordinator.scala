@@ -615,6 +615,7 @@ class GroupCoordinator(val brokerId: Int,
     heartbeatPurgatory.checkAndComplete(memberKey)
   }
 
+  //todo 添加成员并执行再平衡
   private def addMemberAndRebalance(rebalanceTimeoutMs: Int,
                                     sessionTimeoutMs: Int,
                                     clientId: String,
@@ -624,12 +625,14 @@ class GroupCoordinator(val brokerId: Int,
                                     group: GroupMetadata,
                                     callback: JoinCallback) = {
     // use the client-id with a random id suffix as the member-id
+    //组协调者为memberId随机生成一个字符串
     val memberId = clientId + "-" + group.generateMemberIdSuffix
     val member = new MemberMetadata(memberId, group.groupId, clientId, clientHost, rebalanceTimeoutMs,
       sessionTimeoutMs, protocolType, protocols)
     member.awaitingJoinCallback = callback
     //加入group,并选从leader
     group.add(member.memberId, member)
+    //加入新成员可能需要再平衡
     maybePrepareRebalance(group)
     member
   }
@@ -686,6 +689,7 @@ class GroupCoordinator(val brokerId: Int,
     // TODO: add metrics for restabilize timeouts
   }
 
+  //请求处理完成，调用消费者元数据中回调方法，发送响应结果给客户端
   def onCompleteJoin(group: GroupMetadata) {
     var delayedStore: Option[DelayedStore] = None
     group synchronized {
@@ -721,7 +725,7 @@ class GroupCoordinator(val brokerId: Int,
               subProtocol=group.protocol,
               leaderId=group.leaderId,
               errorCode=Errors.NONE.code)
-
+            //调用回调函数
             member.awaitingJoinCallback(joinResult)
             member.awaitingJoinCallback = null
             completeAndScheduleNextHeartbeatExpiration(group, member)

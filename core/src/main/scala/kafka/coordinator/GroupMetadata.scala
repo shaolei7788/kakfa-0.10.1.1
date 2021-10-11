@@ -186,6 +186,7 @@ private[coordinator] class GroupMetadata(val groupId: String, initialState: Grou
 
   def currentState = state
 
+  //没有发送重新加入消费者的成员已经在members中，但是没有回调对象
   def notYetRejoinedMembers = members.values.filter(_.awaitingJoinCallback == null).toList
 
   def allMembers = members.keySet
