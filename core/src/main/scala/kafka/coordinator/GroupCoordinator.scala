@@ -654,7 +654,6 @@ class GroupCoordinator(val brokerId: Int,
     //更新成员，也可能需要再平衡
     maybePrepareRebalance(group)
   }
-
   //消费者状态  Empty -> 准备再平衡 -> 等待同步 -> 稳定
 
   //无论从稳定状态到准备再平衡还是从等待同步到准备再平衡 都会创建一个延迟的操作
