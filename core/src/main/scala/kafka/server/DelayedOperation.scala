@@ -180,6 +180,7 @@ class DelayedOperationPurgatory[T <: DelayedOperation](purgatoryName: String,
    * @param watchKeys keys for bookkeeping the operation
    * @return true iff the delayed operations can be completed by the caller
    */
+  //尝试完成延迟操作，如果不能完成就以指定的键监控这个延迟操作
   def tryCompleteElseWatch(operation: T, watchKeys: Seq[Any]): Boolean = {
     assert(watchKeys.nonEmpty, "The watch key list can't be empty")
 
@@ -192,7 +193,6 @@ class DelayedOperationPurgatory[T <: DelayedOperation](purgatoryName: String,
     // if the operation is completed (by another thread) between the two tryComplete() calls, the
     // operation is unnecessarily added for watch. However, this is a less severe issue since the
     // expire reaper will clean it up periodically.
-
     var isCompletedByMe = operation.safeTryComplete()
     if (isCompletedByMe)
       return true
@@ -232,6 +232,7 @@ class DelayedOperationPurgatory[T <: DelayedOperation](purgatoryName: String,
    *
    * @return the number of completed operations during this process
    */
+  //检查并尝试完成指定键的延迟操作，在tryCompleteElseWatch，如果延迟操作没有完成，会被加入到延迟缓存中
   def checkAndComplete(key: Any): Int = {
     val watchers = inReadLock(removeWatchersLock) { watchersForKey.get(key) }
     if(watchers == null)

@@ -140,6 +140,9 @@ case class GroupSummary(state: String,
  *  2. generation id
  *  3. leader id
  */
+// 同一个消费者编号只对应一个消费组元数据
+// MemberMetadata 消费者成员元数据
+// 消费组元数据管理了所有消费者成员元数据
 @nonthreadsafe
 private[coordinator] class GroupMetadata(val groupId: String, initialState: GroupState = Empty) {
 
@@ -149,8 +152,11 @@ private[coordinator] class GroupMetadata(val groupId: String, initialState: Grou
   private val pendingOffsetCommits = new mutable.HashMap[TopicPartition, OffsetAndMetadata]
 
   var protocolType: Option[String] = None
+  //纪元编号
   var generationId = 0
+  //只有一个主消费者
   var leaderId: String = null
+  //只有一个协议
   var protocol: String = null
 
   def is(groupState: GroupState) = state == groupState
@@ -235,11 +241,13 @@ private[coordinator] class GroupMetadata(val groupId: String, initialState: Grou
     members.isEmpty || (memberProtocols & candidateProtocols).nonEmpty
   }
 
+  //初始化纪元信息
   def initNextGeneration() = {
     assert(notYetRejoinedMembers == List.empty[MemberMetadata])
     if (members.nonEmpty) {
       generationId += 1
       protocol = selectProtocol
+      //在发送响应之前更改状态为同步等待
       transitionTo(AwaitingSync)
     } else {
       generationId += 1

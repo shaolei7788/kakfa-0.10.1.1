@@ -57,9 +57,9 @@ private[coordinator] class MemberMetadata(val memberId: String,
                                           val clientId: String,
                                           val clientHost: String,
                                           val rebalanceTimeoutMs: Int,
-                                          val sessionTimeoutMs: Int,
+                                          val sessionTimeoutMs: Int,//会话超时时间
                                           val protocolType: String,
-                                          //支持的协议集
+                                          //支持的协议集 range,roundrobin
                                           var supportedProtocols: List[(String, Array[Byte])]) {
 
   //消费者分区分配的结果

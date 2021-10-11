@@ -321,7 +321,7 @@ public abstract class AbstractCoordinator implements Closeable {
                 onJoinPrepare(generation.generationId, generation.memberId);
                 needsJoinPrepare = false;
             }
-            //todo 核心 发送加入group请求
+            //todo 核心 发送加入group请求  如果发送失败后，会发送多次加入组请求
             RequestFuture<ByteBuffer> future = initiateJoinGroup();
             //同步阻塞
             client.poll(future);
@@ -331,16 +331,18 @@ public abstract class AbstractCoordinator implements Closeable {
             //加入group成功
             if (future.succeeded()) {
                 needsJoinPrepare = true;
-                //todo
+                //todo 完成加入，也只会调用一次onPartitionAssigned
                 onJoinComplete(generation.generationId, generation.memberId, generation.protocol, future.value());
             } else {
                 RuntimeException exception = future.exception();
+                //这三个异常立即重新
                 if (exception instanceof UnknownMemberIdException ||
                         exception instanceof RebalanceInProgressException ||
                         exception instanceof IllegalGenerationException)
                     continue;
                 else if (!future.isRetriable())
                     throw exception;
+                //其它异常稍后再试
                 time.sleep(retryBackoffMs);
             }
         }
@@ -363,6 +365,7 @@ public abstract class AbstractCoordinator implements Closeable {
             state = MemberState.REBALANCING;
             //todo 1 发送加入group请求 ApiKeys.JOIN_GROUP 里面有个回调函数 响应信息会返回那个是leader consumer
             //todo 2 发送加入group请求 ApiKeys.SYNC_GROUP 里面有个回调函数 leader会制定分区分配策略并发送给GroupCoordinator
+            //消费者发送ApiKeys.JOIN_GROUP 和 ApiKeys.SYNC_GROUP 一定是发到同一个 组协调者节点
             joinFuture = sendJoinGroupRequest();
             //给compose绑定监听器
             joinFuture.addListener(new RequestFutureListener<ByteBuffer>() {

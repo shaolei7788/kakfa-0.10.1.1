@@ -100,6 +100,7 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
         case ApiKeys.HEARTBEAT => handleHeartbeatRequest(request)
         //todo 消费者离开group
         case ApiKeys.LEAVE_GROUP => handleLeaveGroupRequest(request)
+        //todo 消费者同步组
         case ApiKeys.SYNC_GROUP => handleSyncGroupRequest(request)
         case ApiKeys.DESCRIBE_GROUPS => handleDescribeGroupRequest(request)
         case ApiKeys.LIST_GROUPS => handleListGroupsRequest(request)

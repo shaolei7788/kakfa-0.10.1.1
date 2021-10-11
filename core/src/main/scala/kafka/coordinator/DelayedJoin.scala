@@ -29,6 +29,7 @@ import kafka.server.DelayedOperation
  * the group are marked as failed, and complete this operation to proceed rebalance with
  * the rest of the group.
  */
+//延迟加入组操作
 private[coordinator] class DelayedJoin(coordinator: GroupCoordinator,
                                        group: GroupMetadata,
                                        rebalanceTimeout: Long)
