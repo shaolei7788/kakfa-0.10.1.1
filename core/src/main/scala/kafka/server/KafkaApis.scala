@@ -1071,10 +1071,8 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
 
   def handleJoinGroupRequest(request: RequestChannel.Request) {
     import JavaConversions._
-
     val joinGroupRequest = request.body.asInstanceOf[JoinGroupRequest]
     val responseHeader = new ResponseHeader(request.header.correlationId)
-
     // the callback for sending a join-group response
     //todo 加入group的回调函数
     def sendResponseCallback(joinResult: JoinGroupResult) {
@@ -1101,18 +1099,18 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
       requestChannel.sendResponse(new RequestChannel.Response(request, new ResponseSend(request.connectionId, responseHeader, responseBody)))
     } else {
       //todo 有权限
-      // let the coordinator to handle join-group
+      // let the coordinator to handle join-group joinGroupRequest.groupProtocols() = List<ProtocolMetadata>
       val protocols = joinGroupRequest.groupProtocols().map(protocol =>
         (protocol.name, Utils.toArray(protocol.metadata))).toList
       //todo
       coordinator.handleJoinGroup(
-        joinGroupRequest.groupId,
-        joinGroupRequest.memberId,
-        request.header.clientId,
-        request.session.clientAddress.toString,
+        joinGroupRequest.groupId,//消费组编号
+        joinGroupRequest.memberId,//消费者成员编号
+        request.header.clientId,//客户端编号
+        request.session.clientAddress.toString,//客户端地址
         joinGroupRequest.rebalanceTimeout,
-        joinGroupRequest.sessionTimeout,
-        joinGroupRequest.protocolType,
+        joinGroupRequest.sessionTimeout,//会话超时时间
+        joinGroupRequest.protocolType,//协议类型
         protocols,
         sendResponseCallback)
     }

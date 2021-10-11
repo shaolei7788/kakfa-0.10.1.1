@@ -312,7 +312,7 @@ public abstract class AbstractCoordinator implements Closeable {
             // on each iteration of the loop because an event requiring a rebalance (such as a metadata
             // refresh which changes the matched subscription set) can occur while another rebalance is
             // still in progress.
-            //todo needsJoinPrepare 防止重复加入组
+            //todo needsJoinPrepare 默认true 防止重复加入组
             if (needsJoinPrepare) {
                 //todo 发送JoinGroupRequest请求之前的准备 做了三件事情
                 // 1 如果开启了自动提交偏移量则进行同步提交偏移量

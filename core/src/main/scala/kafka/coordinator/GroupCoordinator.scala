@@ -119,7 +119,7 @@ class GroupCoordinator(val brokerId: Int,
           if (memberId != JoinGroupRequest.UNKNOWN_MEMBER_ID) {
             responseCallback(joinError(memberId, Errors.UNKNOWN_MEMBER_ID.code))
           } else {
-            //todo
+            //发送JoinGroupRequest memberId = "" 将GroupMetadata加入groupManager
             val group = groupManager.addGroup(new GroupMetadata(groupId))
             //todo 进行leader consumer选举
             doJoinGroup(group, memberId, clientId, clientHost, rebalanceTimeoutMs, sessionTimeoutMs, protocolType, protocols, responseCallback)
@@ -197,7 +197,7 @@ class GroupCoordinator(val brokerId: Int,
 
           case Empty | Stable =>
             if (memberId == JoinGroupRequest.UNKNOWN_MEMBER_ID) {
-              // if the member id is unknown, register the member to the group
+              //todo 发送joinGroup memberId = "" 走这里
               addMemberAndRebalance(rebalanceTimeoutMs, sessionTimeoutMs, clientId, clientHost, protocolType, protocols, group, responseCallback)
             } else {
               val member = group.get(memberId)
