@@ -915,7 +915,6 @@ public abstract class AbstractCoordinator implements Closeable {
                             disable();
                             continue;
                         }
-
                         client.pollNoWakeup();
                         long now = time.milliseconds();
 
