@@ -306,6 +306,7 @@ public abstract class AbstractCoordinator implements Closeable {
     // visible for testing. Joins the group without starting the heartbeat thread.
     void joinGroupIfNeeded() {
         while (needRejoin() || rejoinIncomplete()) {
+            //如下的所有代码是在一个循环中
             ensureCoordinatorReady();
             // call onJoinPrepare if needed. We set a flag to make sure that we do not call it a second
             // time if the client is woken up before a pending rebalance completes. This must be called

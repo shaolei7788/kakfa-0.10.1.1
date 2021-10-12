@@ -39,6 +39,7 @@ private[coordinator] class DelayedJoin(coordinator: GroupCoordinator,
   // call purgatory operations while holding the group lock.
   override def safeTryComplete(): Boolean = tryComplete()
 
+  // DelayedOperation#forceComplete
   override def tryComplete(): Boolean = coordinator.tryCompleteJoin(group, forceComplete)
   override def onExpiration() = coordinator.onExpireJoin()
   override def onComplete() = coordinator.onCompleteJoin(group)

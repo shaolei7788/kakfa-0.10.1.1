@@ -115,6 +115,7 @@ class GroupCoordinator(val brokerId: Int,
       // exist we should reject the request
 
       groupManager.getGroup(groupId) match {
+        //消费组元数据不存在
         case None =>
           if (memberId != JoinGroupRequest.UNKNOWN_MEMBER_ID) {
             responseCallback(joinError(memberId, Errors.UNKNOWN_MEMBER_ID.code))
@@ -124,7 +125,7 @@ class GroupCoordinator(val brokerId: Int,
             //todo 进行leader consumer选举
             doJoinGroup(group, memberId, clientId, clientHost, rebalanceTimeoutMs, sessionTimeoutMs, protocolType, protocols, responseCallback)
           }
-
+        //消费组元数据存在
         case Some(group) =>
           doJoinGroup(group, memberId, clientId, clientHost, rebalanceTimeoutMs, sessionTimeoutMs, protocolType, protocols, responseCallback)
       }
@@ -607,10 +608,12 @@ class GroupCoordinator(val brokerId: Int,
   private def completeAndScheduleNextHeartbeatExpiration(group: GroupMetadata, member: MemberMetadata) {
     // complete current heartbeat expectation
     member.latestHeartbeat = time.milliseconds()
+    //创建样例类对象 MemberKey
     val memberKey = MemberKey(member.groupId, member.memberId)
+    //完成心态
     heartbeatPurgatory.checkAndComplete(memberKey)
 
-    // reschedule the next heartbeat expiration deadline
+    // 下一次心跳时间
     val newHeartbeatDeadline = member.latestHeartbeat + member.sessionTimeoutMs
     val delayedHeartbeat = new DelayedHeartbeat(this, group, member, newHeartbeatDeadline, member.sessionTimeoutMs)
     heartbeatPurgatory.tryCompleteElseWatch(delayedHeartbeat, Seq(memberKey))
@@ -741,22 +744,25 @@ class GroupCoordinator(val brokerId: Int,
             }
           })
         } else {
+          //组元数据不为空
           info(s"Stabilized group ${group.groupId} generation ${group.generationId}")
-
           // trigger the awaiting join group response callback for all the members after rebalancing
+          //遍历所有的成员元数据
           for (member <- group.allMemberMetadata) {
             assert(member.awaitingJoinCallback != null)
             //创建joinResult 对象
             val joinResult = JoinGroupResult(
+              //如果是leader 返回所有消费者成员元数据
               members= if (member.memberId == group.leaderId) { group.currentMemberMetadata } else { Map.empty },
               memberId=member.memberId,
               generationId=group.generationId,
               subProtocol=group.protocol,
               leaderId=group.leaderId,
               errorCode=Errors.NONE.code)
-            //调用回调函数
+            //调用回调函数  即 sendResponseCallback
             member.awaitingJoinCallback(joinResult)
             member.awaitingJoinCallback = null
+            //完成并执行下一次心跳
             completeAndScheduleNextHeartbeatExpiration(group, member)
           }
         }

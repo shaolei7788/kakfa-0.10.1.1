@@ -120,7 +120,7 @@ class GroupMetadataManager(val brokerId: Int,
   /**
    * Get the group associated with the given groupId, or null if not found
    */
-  //根据消费者编号获取消费组元数据，从缓存中获取，如果不存在，新建GroupMetadata
+  //根据消费者编号获取消费组元数据，从缓存中获取
   def getGroup(groupId: String): Option[GroupMetadata] = {
     Option(groupMetadataCache.get(groupId))
   }

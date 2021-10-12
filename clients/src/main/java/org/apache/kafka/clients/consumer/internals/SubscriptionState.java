@@ -155,6 +155,7 @@ public class SubscriptionState {
      * Reset the group's subscription to only contain topics subscribed by this consumer.
      */
     public void resetGroupSubscription() {
+        //retain 保持
         this.groupSubscription.retainAll(subscription);
     }
 

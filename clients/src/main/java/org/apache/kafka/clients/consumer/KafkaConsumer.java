@@ -1036,7 +1036,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
         //todo
         // 1 确保连接GroupCoordinator
         // 2 发送加入group请求 ApiKeys.JOIN_GROUP 里面有个回调函数 响应信息会返回那个是leader consumer
-        // 3 发送加入group请求 ApiKeys.SYNC_GROUP 里面有个回调函数 leader会制定分区分配策略并发送给GroupCoordinator
+        // 3 发送同步group请求 ApiKeys.SYNC_GROUP 里面有个回调函数 leader会制定分区分配策略并发送给GroupCoordinator
         // 4 可能会异步提交偏移量
         coordinator.poll(time.milliseconds());
 

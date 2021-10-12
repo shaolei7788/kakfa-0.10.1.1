@@ -214,20 +214,19 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
         PartitionAssignor assignor = lookupAssignor(assignmentStrategy);
         if (assignor == null)
             throw new IllegalStateException("Coordinator selected invalid assignment protocol: " + assignmentStrategy);
-
+        //反序列化分区分配的结果
         Assignment assignment = ConsumerProtocol.deserializeAssignment(assignmentBuffer);
 
         // set the flag to refresh last committed offsets
         //todo 将needsFetchCommittedOffsets = true ,允许从服务端获取最近一次提交的offset
         subscriptions.needRefreshCommits();
-
-        // update partition assignment
+        //更新分区分配的结果
         subscriptions.assignFromSubscribed(assignment.partitions());
-
         // give the assignor a chance to update internal state based on the received assignment
+        //一个空实现
         assignor.onAssignment(assignment);
-
         // reschedule the auto commit starting from now
+        //下次自动提交戒指时间
         this.nextAutoCommitDeadline = time.milliseconds() + autoCommitIntervalMs;
 
         // execute the user's callback after rebalance
@@ -235,6 +234,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
         log.info("Setting newly assigned partitions {} for group {}", subscriptions.assignedPartitions(), groupId);
         try {
             Set<TopicPartition> assigned = new HashSet<>(subscriptions.assignedPartitions());
+            //分区分配好后，可以指定
             listener.onPartitionsAssigned(assigned);
         } catch (WakeupException e) {
             throw e;
@@ -252,7 +252,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
      * @param now current time in milliseconds
      */
     public void poll(long now) {
-        //触发执行注册的监听 offset提交完成的方法
+        //触发已完成提交偏移量的回调函数
         invokeCompletedOffsetCommitCallbacks();
         //todo subscriptions.partitionsAutoAssigned() 代表自动分配分区
         // coordinator 为空
@@ -268,8 +268,9 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
             // we need to ensure that the metadata is fresh before joining initially. This ensures
             // that we have matched the pattern against the cluster's topics at least once before joining.
             //消费者有正则表达式订阅类型
-            if (subscriptions.hasPatternSubscription())
+            if (subscriptions.hasPatternSubscription()) {
                 client.ensureFreshMetadata();
+            }
             //todo 确保group is active
             ensureActiveGroup();
             now = time.milliseconds();
@@ -347,10 +348,12 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
 
         // execute the user's callback before rebalance
         // subscriptions = SubscriptionState
+        //消费者再平衡监听器
         ConsumerRebalanceListener listener = subscriptions.listener();
         log.info("Revoking previously assigned partitions {} for group {}", subscriptions.assignedPartitions(), groupId);
         try {
             Set<TopicPartition> revoked = new HashSet<>(subscriptions.assignedPartitions());
+            //调用onPartitionsRevoked方法
             listener.onPartitionsRevoked(revoked);
         } catch (WakeupException e) {
             throw e;
@@ -365,10 +368,12 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
 
     @Override
     public boolean needRejoin() {
+        //判断分区是否自动分配  subscriptions.partitionsAutoAssigned() 自动分配
         if (!subscriptions.partitionsAutoAssigned())
             return false;
 
         // we need to rejoin if we performed the assignment and metadata has changed
+        //指定的快照跟元数据快照不相等 也需要重新加入
         if (assignmentSnapshot != null && !assignmentSnapshot.equals(metadataSnapshot))
             return true;
 
