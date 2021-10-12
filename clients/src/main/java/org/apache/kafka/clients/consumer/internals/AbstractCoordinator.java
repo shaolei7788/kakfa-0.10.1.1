@@ -944,6 +944,7 @@ public abstract class AbstractCoordinator implements Closeable {
                                 @Override
                                 public void onSuccess(Void value) {
                                     synchronized (AbstractCoordinator.this) {
+                                        //更新心跳时间
                                         heartbeat.receiveHeartbeat(time.milliseconds());
                                     }
                                 }

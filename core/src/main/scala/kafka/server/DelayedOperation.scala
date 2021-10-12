@@ -136,7 +136,7 @@ class DelayedOperationPurgatory[T <: DelayedOperation](purgatoryName: String,
                                                        purgeInterval: Int = 1000,
                                                        //表示是否启动删除线程
                                                        reaperEnabled: Boolean = true)
-        extends Logging with KafkaMetricsGroup {
+  extends Logging with KafkaMetricsGroup {
 
   /* a list of operation watching keys */
   private val watchersForKey = new Pool[Any, Watchers](Some((key: Any) => new Watchers(key)))
@@ -346,7 +346,6 @@ class DelayedOperationPurgatory[T <: DelayedOperation](purgatoryName: String,
     // 遍历列表，并移除已经完成的延迟
     def purgeCompleted(): Int = {
       var purged = 0
-
       val iter = operations.iterator()
       while (iter.hasNext) {
         val curr = iter.next()
