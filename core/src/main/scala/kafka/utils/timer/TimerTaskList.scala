@@ -119,7 +119,7 @@ private[timer] class TimerTaskList(taskCounter: AtomicInteger) extends Delayed {
       while (head ne root) {
         //移除遍历到的链表元素
         remove(head)
-        //执行f函数
+        //todo 执行f函数 reinsert 将高层时间轮上的任务插入到低层时间轮的过程
         f(head)
         head = root.next
       }

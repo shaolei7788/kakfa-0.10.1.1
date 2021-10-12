@@ -67,19 +67,19 @@ class SystemTimer(executorName: String,// Purgatory 的名字
                   //该SystemTimer 定时器启动时间，单位是毫秒
                   startMs: Long = SystemTime.hiResClockMs) extends Timer {
 
-  // 单线程的线程池用于异步执行定时任务
+  //单线程的线程池用于异步执行定时任务
   private[this] val taskExecutor = Executors.newFixedThreadPool(1, new ThreadFactory() {
     def newThread(runnable: Runnable): Thread =
       Utils.newThread("executor-"+executorName, runnable, false)
   })
 
   //todo 延迟队列保存所有Bucket，即所有TimerTaskList对象，TimerTaskList 是一个双向链表
-  // 它保存了该定时器下管理的所有 Bucket 对象。因为是DelayQueue，
-  // 所以只有在 Bucket 过期后，才能从该队列中获取到。SystemTimer 类
-  // 的advanceClock 方法正是依靠了这个特性向前驱动时钟
+  // 它保存了该定时器下管理的所有 Bucket 对象。因为是DelayQueue，所以只有在 Bucket 过期后，才能从该队列中获取到。
+  // SystemTimer 类的advanceClock 方法正是依靠了这个特性向前驱动时钟
   private[this] val delayQueue = new DelayQueue[TimerTaskList]()
   //所有的时间轮公用一个计数器  总定时任务数
   private[this] val taskCounter = new AtomicInteger(0)
+
   //时间轮  startMs 时间轮被创建的起始时间
   private[this] val timingWheel = new TimingWheel(
     tickMs = tickMs,
@@ -117,7 +117,7 @@ class SystemTimer(executorName: String,// Purgatory 的名字
     }
   }
 
-  //这个将高层时间轮上的任务插入到低层时间轮的过程
+  //todo 将高层时间轮上的任务插入到低层时间轮的过程
   private[this] val reinsert = (timerTaskEntry: TimerTaskEntry) => addTimerTaskEntry(timerTaskEntry)
 
   //弹出超时的定时任务列表，将定时器的时钟往前移动，并将定时器任务重新加入到定时器中
