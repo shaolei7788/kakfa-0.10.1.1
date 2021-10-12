@@ -158,8 +158,8 @@ private[timer] class TimingWheel(tickMs: Long, wheelSize: Int, startMs: Long, ta
     } else if (expiration < currentTime + interval) {
       // 还没超时可以添加
       val virtualId = expiration / tickMs
-      //根据任务的失效时间，将任务添加到指定的桶
-      val bucket = buckets((virtualId % wheelSize.toLong).toInt)
+      //根据任务的失效时间，将任务添加到指定的桶  TimerTaskList是一个双向循环链表
+      val bucket: TimerTaskList = buckets((virtualId % wheelSize.toLong).toInt)
       // 添加到Bucket中
       bucket.add(timerTaskEntry)
       // 设置Bucket过期时间
