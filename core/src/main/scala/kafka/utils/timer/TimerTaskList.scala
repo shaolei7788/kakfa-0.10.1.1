@@ -22,11 +22,11 @@ import java.util.concurrent.atomic.{AtomicLong, AtomicInteger}
 import kafka.utils.{SystemTime, threadsafe}
 
 import scala.math._
-//TimerTaskList 是一个双向队列
+//todo TimerTaskList 是一个双向循环链表
 // TimerTaskEntry TimerTask 是一对一关系
 // TimerTaskList 包含多个 TimerTaskEntry 是一对多关系
 // taskCounter  用于标识当前这个链表中的总定时任务数；
-//只有当前时间超越过bucket的起始时间，这个bucket才算是过期，而这里的起始时间就是expiration
+// 只有当前时间超越过bucket的起始时间，这个bucket才算是过期，而这里的起始时间就是expiration
 @threadsafe
 private[timer] class TimerTaskList(taskCounter: AtomicInteger) extends Delayed {
 
