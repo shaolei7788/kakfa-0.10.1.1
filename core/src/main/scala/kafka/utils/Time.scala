@@ -46,6 +46,7 @@ trait Time extends org.apache.kafka.common.utils.Time {
 
   def nanoseconds: Long
 
+  //毫秒
   def hiResClockMs: Long = TimeUnit.NANOSECONDS.toMillis(nanoseconds)
 
   def sleep(ms: Long)
@@ -57,7 +58,7 @@ trait Time extends org.apache.kafka.common.utils.Time {
 object SystemTime extends Time {
   
   def milliseconds: Long = System.currentTimeMillis
-  
+  //获取纳秒
   def nanoseconds: Long = System.nanoTime
   
   def sleep(ms: Long): Unit = Thread.sleep(ms)

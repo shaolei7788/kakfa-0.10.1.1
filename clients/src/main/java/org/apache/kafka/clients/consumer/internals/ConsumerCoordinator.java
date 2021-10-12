@@ -234,7 +234,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
         log.info("Setting newly assigned partitions {} for group {}", subscriptions.assignedPartitions(), groupId);
         try {
             Set<TopicPartition> assigned = new HashSet<>(subscriptions.assignedPartitions());
-            //分区分配好后，可以指定
+            //todo 分区分配好后可以调用
             listener.onPartitionsAssigned(assigned);
         } catch (WakeupException e) {
             throw e;
@@ -519,6 +519,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
         }
         while (true) {
             ensureCoordinatorReady();
+            //发送提交偏移量请求
             RequestFuture<Void> future = sendOffsetCommitRequest(offsets);
             //阻塞等待OffsetCommitResponse
             client.poll(future);
@@ -604,13 +605,11 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
     private RequestFuture<Void> sendOffsetCommitRequest(final Map<TopicPartition, OffsetAndMetadata> offsets) {
         if (offsets.isEmpty())
             return RequestFuture.voidSuccess();
-
+        //组协调者节点
         Node coordinator = coordinator();
         if (coordinator == null)
             return RequestFuture.coordinatorNotAvailable();
-
-        // create the offset commit request
-        //创建请求对象
+        //创建提交偏移量请求需要的对象
         Map<TopicPartition, OffsetCommitRequest.PartitionData> offsetData = new HashMap<>(offsets.size());
         for (Map.Entry<TopicPartition, OffsetAndMetadata> entry : offsets.entrySet()) {
             OffsetAndMetadata offsetAndMetadata = entry.getValue();
@@ -667,13 +666,13 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
                 TopicPartition tp = entry.getKey();
                 OffsetAndMetadata offsetAndMetadata = this.offsets.get(tp);
                 long offset = offsetAndMetadata.offset();
-
                 Errors error = Errors.forCode(entry.getValue());
                 if (error == Errors.NONE) {
                     //没有错误
                     log.debug("Group {} committed offset {} for partition {}", groupId, offset, tp);
+                    //订阅状态订阅了改主题
                     if (subscriptions.isAssigned(tp)){
-                        // update the local cache only if the partition is still assigned
+                        // 更新提交偏移量
                         subscriptions.committed(tp, offsetAndMetadata);
                     }
                 } else if (error == Errors.GROUP_AUTHORIZATION_FAILED) {

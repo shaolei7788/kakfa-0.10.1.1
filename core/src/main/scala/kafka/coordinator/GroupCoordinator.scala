@@ -818,6 +818,7 @@ object GroupCoordinator {
             zkUtils: ZkUtils,
             replicaManager: ReplicaManager,
             time: Time): GroupCoordinator = {
+    // 创建GroupCoordinator  才创建 heartbeatPurgatory
     val heartbeatPurgatory = DelayedOperationPurgatory[DelayedHeartbeat]("Heartbeat", config.brokerId)
     val joinPurgatory = DelayedOperationPurgatory[DelayedJoin]("Rebalance", config.brokerId)
     apply(config, zkUtils, replicaManager, heartbeatPurgatory, joinPurgatory, time)
