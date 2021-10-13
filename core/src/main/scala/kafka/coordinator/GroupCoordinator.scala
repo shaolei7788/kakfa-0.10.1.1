@@ -457,6 +457,7 @@ class GroupCoordinator(val brokerId: Int,
       } else if (generationId != group.generationId) {
         responseCallback(offsetMetadata.mapValues(_ => Errors.ILLEGAL_GENERATION.code))
       } else {
+        //获取成员元数据
         val member = group.get(memberId)
         completeAndScheduleNextHeartbeatExpiration(group, member)
         delayedOffsetStore = groupManager.prepareStoreOffsets(group, memberId, generationId,
@@ -465,6 +466,7 @@ class GroupCoordinator(val brokerId: Int,
     }
 
     // store the offsets without holding the group lock
+    //todo 提交偏移量  即 append日志
     delayedOffsetStore.foreach(groupManager.store)
   }
 

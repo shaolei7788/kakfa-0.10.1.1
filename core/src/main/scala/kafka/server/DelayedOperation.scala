@@ -240,7 +240,7 @@ class DelayedOperationPurgatory[T <: DelayedOperation](purgatoryName: String,
   //检查并尝试完成指定键的延迟操作，在tryCompleteElseWatch，如果延迟操作没有完成，会被加入到延迟缓存中
   def checkAndComplete(key: Any): Int = {
     // 获取WatcherList中Key对应的Watchers对象实例
-    val watchers = inReadLock(removeWatchersLock) { watchersForKey.get(key) }
+    val watchers: Watchers = inReadLock(removeWatchersLock) { watchersForKey.get(key) }
     if(watchers == null)
       0
     else {
@@ -339,11 +339,10 @@ class DelayedOperationPurgatory[T <: DelayedOperation](purgatoryName: String,
 
       if (operations.isEmpty)
         removeKeyIfEmpty(key, this)
-
       completed
     }
 
-    // 遍历列表，并移除已经完成的延迟
+    // 遍历列表，并移除已经完成的延迟   purge:清理
     def purgeCompleted(): Int = {
       var purged = 0
       val iter = operations.iterator()
