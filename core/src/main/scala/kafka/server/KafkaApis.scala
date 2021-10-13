@@ -349,6 +349,7 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
             }
           )
         }
+
         //todo 组协调者处理提交偏移量
         coordinator.handleCommitOffsets(
           offsetCommitRequest.groupId,
