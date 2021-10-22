@@ -147,11 +147,13 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
     private final Serializer<K> keySerializer;
     private final Serializer<V> valueSerializer;
     private final ProducerConfig producerConfig;
+    //用于生产者到块缓冲时间 60 * 1000 = 60s
     private final long maxBlockTimeMs;
+    //控制客户端等待请求响应的最长时间
     private final int requestTimeoutMs;
     //一个拦截器，对我们发送的数据进行拦截,
     //这个功能其实没啥用，我们即使真的要过滤，拦截一些消息，也不考虑使用它，我们直接发送数据之前自己用代码过滤即可
-    private final ProducerInterceptors<K, V> interceptors;//拦截器列表
+    private final ProducerInterceptors<K, V> interceptors;
 
     /**
      * A producer is instantiated by providing a set of key-value pairs as configuration. Valid configuration strings
@@ -218,8 +220,7 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
             if (clientId.length() <= 0) {
                 clientId = "producer-" + PRODUCER_CLIENT_ID_SEQUENCE.getAndIncrement();
             }
-            //跟监控信息有关，这个跟我们分析源码的主流程关系不大
-            //所以关于metric的东西可以不用关心
+            //跟监控信息有关
             Map<String, String> metricTags = new LinkedHashMap<String, String>();
             metricTags.put("client-id", clientId);
             MetricConfig metricConfig = new MetricConfig().samples(config.getInt(ProducerConfig.METRICS_NUM_SAMPLES_CONFIG))
@@ -327,6 +328,7 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
             this.accumulator = new RecordAccumulator(config.getInt(ProducerConfig.BATCH_SIZE_CONFIG),
                     this.totalMemorySize,//32m
                     this.compressionType,
+                    //等待批量数据的时间，超过此时间，未达到批量发送基本单位也发送
                     config.getLong(ProducerConfig.LINGER_MS_CONFIG),//0
                     retryBackoffMs,//100ms
                     metrics,
@@ -347,13 +349,18 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
              * (4). receive.buffer.bytes:socket接收数据的缓冲区的大小,默认值是32K
              */
             NetworkClient client = new NetworkClient(
+                    // connections.max.idle.ms = 9 * 60 * 1000
                     new Selector(config.getLong(ProducerConfig.CONNECTIONS_MAX_IDLE_MS_CONFIG),
                     this.metrics, time, "producer", channelBuilder),
                     this.metadata,
                     clientId,
+                    // 5
                     config.getInt(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION),
+                    // backoff 补偿的意思
                     config.getLong(ProducerConfig.RECONNECT_BACKOFF_MS_CONFIG),
+                    // send.buffer.bytes = 128 * 1024 socket的发送缓冲区
                     config.getInt(ProducerConfig.SEND_BUFFER_CONFIG),
+                    // receive.buffer.bytes = 32 * 1024 socket的接收缓冲区
                     config.getInt(ProducerConfig.RECEIVE_BUFFER_CONFIG),
                     this.requestTimeoutMs, time);
             /**
@@ -382,6 +389,7 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
             this.sender = new Sender(client,
                     this.metadata,
                     this.accumulator,
+                    // max.in.flight.requests.per.connection = 5 即 guaranteeMessageOrder 默认为false
                     config.getInt(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION) == 1,
                     config.getInt(ProducerConfig.MAX_REQUEST_SIZE_CONFIG),
                     (short) parseAcks(config.getString(ProducerConfig.ACKS_CONFIG)),
@@ -552,7 +560,7 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
              *      根据分区器选择消息应该发送的分区
              *      因为在此处已经获取到了元数据的信息,我们就可以进行计算
              */
-            //计算发送的消息应该发到哪个分区 如果记录有分区，则返回值，否则调用配置的分区器类来计算分区。
+            //计算发送的消息应该发到哪个分区 如果记录有分区，则返回值，否则调用配置的分区器类来计算分区。    todo 讲解
             int partition = partition(record, serializedKey, serializedValue, cluster);
             //计算发送消息的大小
             int serializedSize = Records.LOG_OVERHEAD + Record.recordSize(serializedKey, serializedValue);
@@ -570,13 +578,13 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
              *      获取到了元数据,也计算出来了分区号,就可以创建一个封装分区的对象
              */
             tp = new TopicPartition(record.topic(), partition);
+            //每条消息都有时间戳 当前时间
             long timestamp = record.timestamp() == null ? time.milliseconds() : record.timestamp();
             log.trace("Sending record {} with callback {} to topic {} partition {}", record, callback, record.topic(), partition);
             // producer callback will make sure to call both 'callback' and interceptor callback
             // producer callback将确保同时调用'callback'和interceptor callback
             /**
              *  步骤六:
-             *
              *      给每一条消息都绑定它的回调函数,因为我们使用的是异步的方式发送消息
              *      如果发送出去的消息有返回响应,就会调用回调函数
              *      此处是给消息绑定回调函数
@@ -648,8 +656,6 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
         }
     }
 
-    public static int testFlag = 0;
-
     /**
      * Wait for cluster metadata including partitions for the given topic to be available.
      * 返回一个包含主题元数据的Cluster集群对象和等待时间
@@ -699,16 +705,12 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
             //每次成功更新版本,版本号就会递增
             //2).把needUpdate标识符设置为true
             int version = metadata.requestUpdate();//得到的是更新元数据之前的版本号
-            /**
-             * TODO 这个唤醒操作很重要
-             *  这是一个异步请求,初始化的时候是没有元数据的,所以就通过唤醒一个线程去获取元数据
-             */
-            //真正获取元数据是这个线程去完成的
-            sender.wakeup();//初始化一个线程,在后台异步的去拉取元数据,发送消息
-            testFlag = 1;
+            //todo 唤醒sender线程去获取元数据  这个地方很巧妙
+            // 其他线程如果因为调用了selector.select()或者selector.select(long)这两个方法而阻塞，
+            // 调用了selector.wakeup()之后，就会立即返回结果，并且返回的值!=0
+            sender.wakeup();
             try {
-                //TODO 等待元数据
-                //同步等待
+                //TODO 同步等待元数据
                 //等待上面的sender.wakeup()线程,直到获取到元数据
                 //拿到元数据信息(集群里有那几个节点,节点里面有那几个主题和分区,),就可以计算消息将会发送到哪个分区
                 metadata.awaitUpdate(version, remainingWaitMs);
@@ -738,8 +740,7 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
         } while (partitionsCount == null);//代替了if判断的做法,do -while循环是先执行一次 再进行判断,很严谨很巧妙
 
         if (partition != null && partition >= partitionsCount) {
-            throw new KafkaException(
-                    String.format("Invalid partition given with record: %d is not in the range [0...%d).", partition, partitionsCount));
+            throw new KafkaException(String.format("Invalid partition given with record: %d is not in the range [0...%d).", partition, partitionsCount));
         }
 
         //递归调用自己

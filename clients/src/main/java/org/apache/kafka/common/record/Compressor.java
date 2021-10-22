@@ -29,6 +29,7 @@ import java.nio.ByteBuffer;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
+//这个版本的压缩器有四种类型NONE(不压缩)，GZIP，SNAPPY，LZ4(由compression.type配置)
 public class Compressor {
 
     static private final float COMPRESSION_RATE_DAMPING_FACTOR = 0.9f;

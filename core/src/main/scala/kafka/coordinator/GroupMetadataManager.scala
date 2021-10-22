@@ -223,6 +223,7 @@ class GroupMetadataManager(val brokerId: Int,
     }
   }
 
+  //todo 调用副本管理器添加组消息
   def store(delayedStore: DelayedStore) {
     // call replica manager to append the group message
     replicaManager.appendMessages(
@@ -261,6 +262,7 @@ class GroupMetadataManager(val brokerId: Int,
 
         val offsetTopicPartition = new TopicPartition(Topic.GroupMetadataTopicName, partitionFor(group.groupId))
 
+        //封装成ByteBufferMessageSet对象
         val offsetsAndMetadataMessageSet = Map(offsetTopicPartition ->
           new ByteBufferMessageSet(config.offsetsTopicCompressionCodec, messages:_*))
 
@@ -330,6 +332,7 @@ class GroupMetadataManager(val brokerId: Int,
         }
 
         group synchronized {
+          //准备提交偏移量
           group.prepareOffsetCommit(offsetMetadata)
         }
 

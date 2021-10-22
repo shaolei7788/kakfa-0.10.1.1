@@ -41,11 +41,12 @@ final class ClusterConnectionStates {
         //如果为null,说明从来没有连接过
         if (state == null)
             return true;
-        else
+        else {
             //如果从缓存里面获取的连接,状态是DISCONNECTED,
             //并且now - state.lastConnectAttemptMs >= this.reconnectBackoffMs
             //那么说明可以重试连接
             return state.state == ConnectionState.DISCONNECTED && now - state.lastConnectAttemptMs >= this.reconnectBackoffMs;
+        }
     }
 
     /**

@@ -43,15 +43,17 @@ import org.apache.kafka.common.utils.Time;
  */
 public final class BufferPool {
 
+    // 32m
     private final long totalMemory;
     //一个批次的大小,默认是16K
     private final int poolableSize;
     private final ReentrantLock lock;
     //内存池就是一个队列,队列里面放的就是一块块的内存
-    //就是跟连接池是一个道理
+    //缓存了指定大小的ByteBuffer对象
     private final Deque<ByteBuffer> free;
     //如果内存不够,就会往waiters里面加一个Condition对象
     private final Deque<Condition> waiters;
+    //记录了可用空间的大小，这个空间是totalMemory减去free列表中全部ByteBuffer的大小
     private long availableMemory;
     private final Metrics metrics;
     private final Time time;
@@ -108,9 +110,9 @@ public final class BufferPool {
             //poolableSize代表的是一个批次的大小,默认是16k
             //如果我们申请的内存大小跟默认的批次内存大小相等,并且内存池中不为空,那么直接从内存池中获取一个内存块就行
             //当代码第一次运行到这里,内存池是空的,所以获取不到内存
-            if (size == poolableSize && !this.free.isEmpty())
+            if (size == poolableSize && !this.free.isEmpty()) {
                 return this.free.pollFirst();
-
+            }
             // now check if the request is immediately satisfiable with the
             // memory on hand or if we need to block
             //内存的个数*内存的大小=free的大小
@@ -118,22 +120,23 @@ public final class BufferPool {
             if (this.availableMemory + freeListSize >= size) {
                 //size是我们这次要申请的内存大小
                 //this.availableMemory + freeListSize 目前可用的总内存
-                // we have enough unallocated or pooled memory to immediately
-                // satisfy the request
+                // we have enough unallocated or pooled memory to immediately satisfy the request
+                // 释放内存  freeUp 释放; 开放的意思
                 freeUp(size);
                 //进行内存扣减
                 this.availableMemory -= size;
                 lock.unlock();
                 //直接分配内存
                 return ByteBuffer.allocate(size);
-            } else {//还有一种情况,就是剩余的可用内存值小于我们要申请的内存大小
+            } else {
+                //还有一种情况,就是剩余的可用内存值小于我们要申请的内存大小
                 // we are out of memory and will have to block
-                //统计分配的内存
+                //统计已经分配的内存
                 int accumulated = 0;
                 ByteBuffer buffer = null;
                 Condition moreMemory = this.lock.newCondition();
                 long remainingTimeToBlockNs = TimeUnit.MILLISECONDS.toNanos(maxTimeToBlockMs);
-                //等待被人释放内存
+                //等待被人释放内存 添加到最后  将阻塞线程对应的Condition加入队列 等待唤醒，唤醒的顺序根据入队顺序决定(先进先出)
                 this.waiters.addLast(moreMemory);
                 // loop over and over until we have a buffer or have reserved
                 // enough memory to allocate one
@@ -217,8 +220,10 @@ public final class BufferPool {
      * buffers (if needed)
      */
     private void freeUp(int size) {
-        while (!this.free.isEmpty() && this.availableMemory < size)
+        // free不为空 并且 可用内存小于要申请的size内存大小
+        while (!this.free.isEmpty() && this.availableMemory < size) {
             this.availableMemory += this.free.pollLast().capacity();
+        }
     }
 
     /**

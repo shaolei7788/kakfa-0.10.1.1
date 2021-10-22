@@ -255,6 +255,7 @@ public class Selector implements Selectable {
      * Queue the given request for sending in the subsequent {@link #poll(long)} calls
      * @param send The request to send
      */
+    //将请求暂存到节点对应的网络通道中，还没有真正地将客户端请求发生出去
     public void send(Send send) {
         //获取到一个KafkaChannel
         KafkaChannel channel = channelOrFail(send.destination());
@@ -344,9 +345,6 @@ public class Selector implements Selectable {
                 idleExpiryManager.update(channel.id(), currentTimeNanos);
 
             try {
-                if(KafkaProducer.testFlag == 1 ){
-                    System.out.println("已经发送消息了");
-                }
                 /* complete any connections that have finished their handshake (either normally or immediately) */
                 if (isImmediatelyConnected || key.isConnectable()) {
                     //TODO 核心的代码

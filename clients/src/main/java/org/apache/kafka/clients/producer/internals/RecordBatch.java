@@ -32,20 +32,27 @@ import java.util.List;
 public final class RecordBatch {
 
     private static final Logger log = LoggerFactory.getLogger(RecordBatch.class);
-
+    //记录了保存的Record个数
     public int recordCount = 0;
+    //该批最大的Record的字节数
     public int maxRecordSize = 0;
-    //重试的次数,默认是0
+    //尝试发送当前RecordBatch的重试次数
     public volatile int attempts = 0;
     public final long createdMs;
     public long drainedMs;
-    //上一次重试的时间
+    //上一次尝试发送的时间戳
     public long lastAttemptMs;
+    //消息真正存放的地方
     public final MemoryRecords records;
+    //当前RecordBatch中缓存的消息，都会发送给此TopicPartition
     public final TopicPartition topicPartition;
+    //标识RecordBatch状态的Future对象
     public final ProduceRequestResult produceFuture;
+    //上一次向RecordBatch追加消息的时间戳
     public long lastAppendTime;
+    //消息回调对象集合，Thunk中的callback字段就指向对应消息的Callback对象
     private final List<Thunk> thunks;
+    //用来记录某消息在RecordBatch中的偏移量
     private long offsetCounter = 0L;
     public RecordBatch(TopicPartition tp, MemoryRecords records, long now) {
         this.createdMs = now;
@@ -57,7 +64,7 @@ public final class RecordBatch {
         this.lastAppendTime = createdMs;
         this.retry = false;
     }
-
+    //是否正在重试，如果RecordBatch中的数据发送失败，则会重新尝试发送
     private boolean retry;
 
     /**
@@ -77,8 +84,10 @@ public final class RecordBatch {
                                                                    timestamp, checksum,
                                                                    key == null ? -1 : key.length,
                                                                    value == null ? -1 : value.length);
-            if (callback != null)
+            if (callback != null) {
+                //有回调方法的才加入到thunks里
                 thunks.add(new Thunk(callback, future));
+            }
             this.recordCount++;
             return future;
         }

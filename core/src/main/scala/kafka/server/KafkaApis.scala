@@ -251,7 +251,7 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
    */
   def handleOffsetCommitRequest(request: RequestChannel.Request) {
     val header = request.header
-    val offsetCommitRequest = request.body.asInstanceOf[OffsetCommitRequest]
+    val offsetCommitRequest: OffsetCommitRequest = request.body.asInstanceOf[OffsetCommitRequest]
 
     // reject the request if not authorized to the group
     if (!authorize(request.session, Read, new Resource(Group, offsetCommitRequest.groupId))) {
@@ -307,6 +307,7 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
               if (partitionData.metadata != null && partitionData.metadata.length > config.offsetMetadataMaxSize)
                 (topicPartition, Errors.OFFSET_METADATA_TOO_LARGE.code)
               else {
+                //更新zk路径
                 zkUtils.updatePersistentPath(s"${topicDirs.consumerOffsetDir}/${topicPartition.partition}", partitionData.offset.toString)
                 (topicPartition, Errors.NONE.code)
               }
@@ -348,8 +349,7 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
             }
           )
         }
-
-        // call coordinator to handle commit offset
+        //todo 组协调者处理提交偏移量
         coordinator.handleCommitOffsets(
           offsetCommitRequest.groupId,
           offsetCommitRequest.memberId,

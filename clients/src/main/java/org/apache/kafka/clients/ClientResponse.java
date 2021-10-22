@@ -21,10 +21,14 @@ import org.apache.kafka.common.protocol.types.Struct;
 //客户端响应
 public class ClientResponse {
 
-    private final long receivedTimeMs;//接收到响应的时间戳
-    private final boolean disconnected;//客户端是否在完全读取响应之前断开连接
-    private final ClientRequest request;//最初的请求
-    private final Struct responseBody;//响应的内容
+    //接收到响应的时间戳
+    private final long receivedTimeMs;
+    //客户端是否在完全读取响应之前断开连接
+    private final boolean disconnected;
+    //最初的请求
+    private final ClientRequest request;
+    //响应的内容
+    private final Struct responseBody;
 
     /**
      * @param request The original request

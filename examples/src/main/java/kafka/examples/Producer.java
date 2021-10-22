@@ -38,6 +38,7 @@ public class Producer {
         Properties props = new Properties();
         props.put("bootstrap.servers", "localhost:9092");
         props.put("client.id", "DemoProducer");
+        //必须要指定
         props.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");
         props.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
         producer = new KafkaProducer<>(props);
