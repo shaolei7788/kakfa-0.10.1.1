@@ -154,6 +154,7 @@ public final class Record {
         }
     }
 
+    //todo 真正的写到缓存里 valueOffset = 0, valueSize = -1
     public static void write(Compressor compressor, long crc, byte attributes, long timestamp, byte[] key, byte[] value, int valueOffset, int valueSize) {
         // write crc
         compressor.putInt((int) (crc & 0xffffffffL));
@@ -167,7 +168,9 @@ public final class Record {
         if (key == null) {
             compressor.putInt(-1);
         } else {
+            //key length
             compressor.putInt(key.length);
+            //key
             compressor.put(key, 0, key.length);
         }
         // write the value
@@ -175,7 +178,9 @@ public final class Record {
             compressor.putInt(-1);
         } else {
             int size = valueSize >= 0 ? valueSize : (value.length - valueOffset);
+            //value length
             compressor.putInt(size);
+            //value
             compressor.put(value, valueOffset, size);
         }
     }

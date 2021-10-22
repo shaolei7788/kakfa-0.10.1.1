@@ -52,10 +52,13 @@ public final class RecordAccumulator {
     private volatile boolean closed;
     private final AtomicInteger flushesInProgress;
     private final AtomicInteger appendsInProgress;
+    // 16384 = 16k
     private final int batchSize;
-    private final CompressionType compression;//使用的压缩类型
+    //使用的压缩类型
+    private final CompressionType compression;
+    //消息发送的延迟时间，默认是0，即立即发送
     private final long lingerMs;
-    //重试时间的间隔
+    //重试时间的间隔 100ms
     private final long retryBackoffMs;
     //内存池
     private final BufferPool free;
@@ -63,7 +66,7 @@ public final class RecordAccumulator {
     //当前分区对应的存储队列 <封装消息主题和分区号的对象,消息>
     //申明的变量 有volatile关键字的map对象
     private final ConcurrentMap<TopicPartition, Deque<RecordBatch>> batches;
-    //已经处理成功的批次
+    //未完成发送的 ProducerBatch 集合
     private final IncompleteRecordBatches incomplete;
     // The following variables are only accessed by the sender thread, so we don't need to protect them.
     // 以下变量仅由发送方线程访问，因此我们不需要保护它们。
@@ -245,8 +248,7 @@ public final class RecordAccumulator {
                 MemoryRecords records = MemoryRecords.emptyRecords(buffer, compression, this.batchSize);
                 RecordBatch batch = new RecordBatch(tp, records, time.milliseconds());
                 //尝试往里面写数据,是可以执行成功的
-                FutureRecordMetadata futureRecordMetadata = batch.tryAppend(timestamp, key, value, callback, time.milliseconds());
-                FutureRecordMetadata future = Utils.notNull(futureRecordMetadata);
+                FutureRecordMetadata future = Utils.notNull(batch.tryAppend(timestamp, key, value, callback, time.milliseconds()));
                 /**
                  * 步骤七:
                  *      将写有数据的批次对象RecordBatch放入队列的队尾

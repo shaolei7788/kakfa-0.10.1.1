@@ -92,15 +92,16 @@ public class MemoryRecords implements Records {
         record.buffer().rewind();
     }
 
-    /**
-     * Append a new record and offset to the buffer
-     * @return crc of the record
-     */
+    //  第一条消息              第二条消息
+    //  8字节  |4字节| N        8字节  |4字节| N
+    //  offset|size|message   offset|size|message
+    //每条消息都会被分配一个相对偏移量，而每一批消息的相对偏移量都是从0开始
     public long append(long offset, long timestamp, byte[] key, byte[] value) {
         if (!writable)
             throw new IllegalStateException("Memory records is not writable");
 
         int size = Record.recordSize(key, value);
+        //todo  offset 相对偏移量   size 消息大小
         compressor.putLong(offset);
         compressor.putInt(size);
         //添加记录
