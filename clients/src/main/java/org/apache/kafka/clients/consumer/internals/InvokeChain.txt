@@ -80,8 +80,6 @@ NetworkClient
 	joinFuture.addListener(new RequestFutureListener<ByteBuffer>() {
 		@Override
 		public void onSuccess(ByteBuffer value) {
-			// handle join completion in the callback so that the callback will be invoked
-			// even if the consumer is woken up before finishing the rebalance
 			synchronized (AbstractCoordinator.this) {
 				log.info("Successfully joined group {} with generation {}", groupId, generation.generationId);
 				state = MemberState.STABLE;

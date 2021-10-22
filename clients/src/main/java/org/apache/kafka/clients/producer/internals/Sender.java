@@ -93,6 +93,7 @@ public class Sender implements Runnable {
     public Sender(KafkaClient client,
                   Metadata metadata,
                   RecordAccumulator accumulator,
+                  //默认为false
                   boolean guaranteeMessageOrder,
                   int maxRequestSize,
                   short acks,
@@ -174,7 +175,6 @@ public class Sender implements Runnable {
          *      第二次进来的时候,已经有元数据了
          *  步骤一: 获取元数据
          */
-        //获取元数据
         //当代码第一次运行到这里的时候,其实是没有元数据的,只是返回了cluster对象
         //cluster对象里面没有元数据,接下来的代码都不会执行
         Cluster cluster = metadata.fetch();
@@ -186,7 +186,7 @@ public class Sender implements Runnable {
          *      哪些broker上面需要我们去发送消息
          */
         // get the list of partitions with data ready to send
-        // 获取准备发送数据的分区列表
+        // 获取准备好需要发送数据的分区列表
         RecordAccumulator.ReadyCheckResult result = this.accumulator.ready(cluster, now);
         /**
          * 步骤三: 标识有哪些topic的元数据没有被拉取到,可能是元数据拉取有问题或者元数据又发生了改变,那么强制更新元数据
@@ -289,7 +289,7 @@ public class Sender implements Runnable {
             log.trace("Created {} produce requests: {}", requests.size(), requests);
             pollTimeout = 0;
         }
-        //TODO 发送请求的操作
+        //TODO 将客户端请求对象放到kafka通道里
         for (ClientRequest request : requests){
             /**
              * 接下来要发送请求了,要把数据发送到服务端
@@ -344,8 +344,9 @@ public class Sender implements Runnable {
             log.trace("Cancelled request {} due to node {} being disconnected", response, response.request()
                                                                                                   .request()
                                                                                                   .destination());
-            for (RecordBatch batch : batches.values())
+            for (RecordBatch batch : batches.values()) {
                 completeBatch(batch, Errors.NETWORK_EXCEPTION, -1L, Record.NO_TIMESTAMP, correlationId, now);
+            }
         } else {
             //正常情况下,是走这里
             log.trace("Received produce response from node {} with correlation id {}",
@@ -363,14 +364,13 @@ public class Sender implements Runnable {
                     //如果处理成功就是成功了,如果服务端处理失败了,会给我吗返回失败的信息
                     //error中存储的就是服务端发过来的异常码
                     Errors error = Errors.forCode(partResp.errorCode);
-                    //获取当前分区的响应
+                    //获取当前分区的批记录
                     RecordBatch batch = batches.get(tp);
                     //对响应进行处理
                     completeBatch(batch, error, partResp.baseOffset, partResp.timestamp, correlationId, now);
                 }
                 this.sensors.recordLatency(response.request().request().destination(), response.requestLatencyMs());
-                this.sensors.recordThrottleTime(response.request().request().destination(),
-                                                produceResponse.getThrottleTime());
+                this.sensors.recordThrottleTime(response.request().request().destination(), produceResponse.getThrottleTime());
             } else {
                 // this is the acks = 0 case, just complete all requests
                 for (RecordBatch batch : batches.values())
@@ -407,11 +407,12 @@ public class Sender implements Runnable {
             //TODO 来到这里的数据,(1) 带有异常,但是不能重试(要么是压根不让重试,要么就是重试次数超了); (2) 没有异常
             RuntimeException exception;
             //如果响应里面带有没有权限的异常,
-            if (error == Errors.TOPIC_AUTHORIZATION_FAILED)
+            if (error == Errors.TOPIC_AUTHORIZATION_FAILED) {
                 //自己封装一个异常信息(自定义异常)
                 exception = new TopicAuthorizationException(batch.topicPartition.topic());
-            else
+            } else {
                 exception = error.exception();
+            }
             // tell the user the result of their request
             //TODO 核心代码,把异常的信息也带过去了
             //这个方法里面调用了用户传进来的回调函数
@@ -466,7 +467,7 @@ public class Sender implements Runnable {
         for (RecordBatch batch : batches) {
             //每个RecordBatch 都有唯一的TopicPartition
             TopicPartition tp = batch.topicPartition;
-            // batch.records  MemoryRecords类型  batch.records.buffer = ByteBuffer  java.nio包下
+            //todo  batch.records  MemoryRecords类型  batch.records.buffer = ByteBuffer  java.nio包下
             produceRecordsByPartition.put(tp, batch.records.buffer());
             recordsByPartition.put(tp, batch);
         }
@@ -483,7 +484,7 @@ public class Sender implements Runnable {
                 handleProduceResponse(response, recordsByPartition, time.milliseconds());
             }
         };
-        //这个就是我们封装出来的请求,里面带了回调函数
+        //todo 回调函数会作为客户端请求的一个成员变量，当客户端请求完成，会调用回调函数
         return new ClientRequest(now, acks != 0, send, callback);
     }
 

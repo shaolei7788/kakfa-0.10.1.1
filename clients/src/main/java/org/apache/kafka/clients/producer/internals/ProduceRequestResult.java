@@ -31,6 +31,7 @@ public final class ProduceRequestResult {
 
     private final CountDownLatch latch = new CountDownLatch(1);
     private volatile TopicPartition topicPartition;
+    //这里保存的是服务端为此RecordBatch中第一条消息分配的offset的值
     private volatile long baseOffset = -1L;
     private volatile RuntimeException error;
 
@@ -43,6 +44,7 @@ public final class ProduceRequestResult {
      * @param baseOffset The base offset assigned to the record
      * @param error The error that occurred if there was one, or null.
      */
+    //将此请求标记为已完成，并取消阻止所有等待其完成的线程
     public void done(TopicPartition topicPartition, long baseOffset, RuntimeException error) {
         this.topicPartition = topicPartition;
         this.baseOffset = baseOffset;

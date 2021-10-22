@@ -67,7 +67,9 @@ public final class RecordAccumulator {
     private final IncompleteRecordBatches incomplete;
     // The following variables are only accessed by the sender thread, so we don't need to protect them.
     // 以下变量仅由发送方线程访问，因此我们不需要保护它们。
+    // 是用来记录这个 tp 是否有还有未完成的 RecordBatch
     private final Set<TopicPartition> muted;
+    //使用drain方法批量导出RecordBatch时，为了防止饥饿，使用drainIndex记录上次发送停止时的位置，下次继续从此位置开发发送
     private int drainIndex;
 
     /**
@@ -199,8 +201,9 @@ public final class RecordAccumulator {
                  */
                 RecordAppendResult appendResult = tryAppend(timestamp, key, value, callback, dq);
                 //第一次进来的时候appendResult就是null
-                if (appendResult != null)
+                if (appendResult != null) {
                     return appendResult;
+                }
             }//释放锁
 
             // we don't have an in-progress record batch try to allocate a new batch
@@ -215,7 +218,7 @@ public final class RecordAccumulator {
             log.trace("Allocating a new {} byte message buffer for topic {} partition {}", size, tp.topic(), tp.partition());
             //从内存池中分配内存
             /**
-             * 步骤四: 根据批次RecordBatch的大小去分配内存
+             * 步骤四: 根据批次RecordBatch的大小去分配内存 maxTimeToBlock 最大等待时间
              */
             ByteBuffer buffer = free.allocate(size, maxTimeToBlock);
             synchronized (dq) {
@@ -231,19 +234,19 @@ public final class RecordAccumulator {
                 RecordAppendResult appendResult = tryAppend(timestamp, key, value, callback, dq);
                 if (appendResult != null) {
                     // Somebody else found us a batch, return the one we waited for! Hopefully this doesn't happen often...
-                    //
+                    // 释放内存
                     free.deallocate(buffer);
                     return appendResult;
                 }
                 /**
                  * 步骤六: 根据内存大小封装批次
-                 *
                  *      第一次执行到这里,会创建一个批次对象,那么其他线程也可以写数据进去了
                  */
                 MemoryRecords records = MemoryRecords.emptyRecords(buffer, compression, this.batchSize);
                 RecordBatch batch = new RecordBatch(tp, records, time.milliseconds());
                 //尝试往里面写数据,是可以执行成功的
-                FutureRecordMetadata future = Utils.notNull(batch.tryAppend(timestamp, key, value, callback, time.milliseconds()));
+                FutureRecordMetadata futureRecordMetadata = batch.tryAppend(timestamp, key, value, callback, time.milliseconds());
+                FutureRecordMetadata future = Utils.notNull(futureRecordMetadata);
                 /**
                  * 步骤七:
                  *      将写有数据的批次对象RecordBatch放入队列的队尾
@@ -341,8 +344,7 @@ public final class RecordAccumulator {
         batch.setRetry();
         Deque<RecordBatch> deque = getOrCreateDeque(batch.topicPartition);
         synchronized (deque) {
-            //将批次重新放入队列里面
-            //并且放入队头
+            //将批次重新放入队列里面 并且放入队头
             deque.addFirst(batch);
         }
     }
@@ -391,6 +393,9 @@ public final class RecordAccumulator {
                     //并不会删除deque,只是将part存入unknownLeaderTopics
                     unknownLeaderTopics.add(part.topic());
                 } else if (!readyNodes.contains(leader) && !muted.contains(part)) {
+                    //todo 如果 muted 集合包含这个 tp，那么在遍历时将不会处理它对应的 deque，也就是说，
+                    // 如果一个 tp 加入了 muted 集合中，即使它对应的 RecordBatch 可以发送了，也不会触发引起其对应的 leader 被选择出来
+
                     //获取队列的第一个批次
                     RecordBatch batch = deque.peekFirst();
                     //如果batch不是null,我们就判断一下是否可以发送这个批次
@@ -399,7 +404,6 @@ public final class RecordAccumulator {
                          * 接下来就是判断符合发送的条件
                          * 当一个批次没有被写满,但是到了一定的时间间隔,还是会被发送出去的,默认值是100ms
                          */
-
                         /**
                          * batch.attempts : 重试的次数
                          * batch.lastAttemptMs : 上一次重试的时间
@@ -495,6 +499,8 @@ public final class RecordAccumulator {
      * @param now The current unix time in milliseconds
      * @return A list of {@link RecordBatch} for each node specified with total size less than the requested maxSize.
      */
+    //是用来遍历可发送请求的 node，然后再遍历在这个 node 上所有 tp，如果 tp 对应的 deque 有数据，将会被选择出来直到超过一个请求的最大长度（max.request.size）为止，
+    // 也就说说即使 RecordBatch 没有达到条件，但为了保证每个 request 尽快多地发送数据提高发送效率，这个 RecordBatch 依然会被提前选出来并进行发送
     public Map<Integer, List<RecordBatch>> drain(Cluster cluster,
                                                  Set<Node> nodes,
                                                  int maxSize,
@@ -503,6 +509,7 @@ public final class RecordAccumulator {
             return Collections.emptyMap();
         }
         Map<Integer, List<RecordBatch>> batches = new HashMap<>();
+        //接收消息的节点
         for (Node node : nodes) {
             int size = 0;
             //获取指定nodeid，对应的分区
@@ -514,6 +521,8 @@ public final class RecordAccumulator {
                 PartitionInfo part = parts.get(drainIndex);
                 TopicPartition tp = new TopicPartition(part.topic(), part.partition());
                 // Only proceed if the partition has no in-flight batches.
+                //todo 如果 muted 集合包含这个 tp，那么在遍历时将不会处理它对应的 deque，也就是说，
+                // 如果一个 tp 加入了 muted 集合中，即使它对应的 RecordBatch 可以发送了，也不会触发引起其对应的 leader 被选择出来
                 if (!muted.contains(tp)) {
                     Deque<RecordBatch> deque = getDeque(new TopicPartition(part.topic(), part.partition()));
                     if (deque != null) {

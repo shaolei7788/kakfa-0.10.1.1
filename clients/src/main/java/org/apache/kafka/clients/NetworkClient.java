@@ -238,6 +238,7 @@ public class NetworkClient implements KafkaClient {
     private boolean canSendRequest(String node) {
         return connectionStates.isConnected(node)
                 && selector.isChannelReady(node)
+                // 会判断请求个数
                 && inFlightRequests.canSendMore(node);
     }
 
@@ -404,6 +405,7 @@ public class NetworkClient implements KafkaClient {
      *
      * @return The node with the fewest in-flight requests.
      */
+    //todo 查找集群负载最低的一个node 通过查找inFlightRequests 中未确认请求最少的的节点
     @Override
     public Node leastLoadedNode(long now) {
         List<Node> nodes = this.metadataUpdater.fetchNodes();
@@ -620,16 +622,13 @@ public class NetworkClient implements KafkaClient {
 
         @Override
         public long maybeUpdate(long now) {
-            if(KafkaProducer.testFlag == 1 ){
-                System.out.println("已经发送消息了");
-            }
             // should we update our metadata?  调用doSend()调用waitOnMetadata方法 awaitUpdate 会 将 needUpdate改成true
             long timeToNextMetadataUpdate = metadata.timeToNextUpdate(now);
+            // metadata.refreshBackoff() = 100
             long timeToNextReconnectAttempt = Math.max(this.lastNoNodeAvailableMs + metadata.refreshBackoff() - now, 0);
             long waitForMetadataFetch = this.metadataFetchInProgress ? Integer.MAX_VALUE : 0;
             // if there is no node available to connect, back off refreshing metadata
             long metadataTimeout = Math.max(Math.max(timeToNextMetadataUpdate, timeToNextReconnectAttempt), waitForMetadataFetch);
-
             if (metadataTimeout == 0) {
                 // Beware that the behavior of this method and the computation of timeouts for poll() are
                 // highly dependent on the behavior of leastLoadedNode.
