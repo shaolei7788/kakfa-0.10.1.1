@@ -50,7 +50,7 @@ import kafka.common.InvalidOffsetException
  */
 //快递定位指定偏移量在数据文件中的物理位置
 //稀疏索引可以通过内存映射的方式，将整个索引文件都放入内存，加快偏移量的查询
-// baseOffset 基础偏移量   maxIndexSize 默认10m
+// file指向磁盘上的索引文件 baseOffset 基础偏移量   maxIndexSize 默认10m
 class OffsetIndex(file: File, baseOffset: Long, maxIndexSize: Int = -1)
     extends AbstractIndex[Long, Int](file, baseOffset, maxIndexSize) {
 
@@ -85,8 +85,9 @@ class OffsetIndex(file: File, baseOffset: Long, maxIndexSize: Int = -1)
    *         If the target offset is smaller than the least entry in the index (or the index is empty),
    *         the pair (baseOffset, 0) is returned.
    */
-  //索引文件中每个索引条目占8字节，相对偏移量 物理位置各占4字节，在查找过程中需要读取偏移量的值和目标偏移量进行对比
+  // 索引文件中每个索引条目占8字节，相对偏移量 物理位置各占4字节，在查找过程中需要读取偏移量的值和目标偏移量进行对比
   // lookup 返回的OffsetPosition （绝对偏移量,物理位置）
+  //todo 查找的目标是小于targetOffset的最大offset对应的物理位置
   def lookup(targetOffset: Long): OffsetPosition = {
     maybeLock(lock) {
       //查询时mmp会发生变化，所以先复制出来

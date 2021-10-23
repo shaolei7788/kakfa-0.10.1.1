@@ -194,6 +194,7 @@ public class Sender implements Runnable {
          */
         // if there are any partitions whose leaders are not known yet, force metadata update
         // 如果没有leader partition,强制元数据更新
+        // 某一时刻 topic 有 0，1，2三个分区，突然topic-2 都挂了, 就会导致topic-2 没有leader，就需要更新元数据
         if (!result.unknownLeaderTopics.isEmpty()) {
             // The set of topics with unknown leader contains topics with leader election pending as well as
             // topics which may have expired. Add the topic again to metadata to ensure it is included

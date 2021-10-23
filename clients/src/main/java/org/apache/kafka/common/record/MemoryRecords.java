@@ -100,6 +100,7 @@ public class MemoryRecords implements Records {
         if (!writable)
             throw new IllegalStateException("Memory records is not writable");
 
+        //这条消息的大小   = 4+1+1+8+4+ keySize+4+ valueSize = 22 + keySize + valueSize
         int size = Record.recordSize(key, value);
         //todo  offset 相对偏移量   size 消息大小
         compressor.putLong(offset);

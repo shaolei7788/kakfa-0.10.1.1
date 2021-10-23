@@ -40,11 +40,16 @@ object ByteBufferMessageSet {
     if (messages.isEmpty)
       MessageSet.Empty.buffer
     else if (compressionCodec == NoCompressionCodec) {
+      //没有使用压缩
       val buffer = ByteBuffer.allocate(MessageSet.messageSetSize(messages))
-      for (message <- messages) writeMessage(buffer, message, offsetAssigner.nextAbsoluteOffset())
+      for (message <- messages) {
+        //为每个消息分配offset，并写入buffer
+        writeMessage(buffer, message, offsetAssigner.nextAbsoluteOffset())
+      }
       buffer.rewind()
       buffer
     } else {
+      //使用了压缩
       val magicAndTimestamp = wrapperMessageTimestamp match {
         case Some(ts) => MagicAndTimestamp(messages.head.magic, ts)
         case None => MessageSet.magicAndLargestTimestamp(messages)
@@ -427,8 +432,7 @@ class ByteBufferMessageSet(val buffer: ByteBuffer) extends MessageSet with Loggi
         convertNonCompressedMessages(offsetCounter, compactedTopic, now, messageTimestampType, messageTimestampDiffMaxMs, messageFormatVersion)
       else {
         // todo
-        validateNonCompressedMessagesAndAssignOffsetInPlace(offsetCounter, now, compactedTopic, messageTimestampType,
-          messageTimestampDiffMaxMs)
+        validateNonCompressedMessagesAndAssignOffsetInPlace(offsetCounter, now, compactedTopic, messageTimestampType, messageTimestampDiffMaxMs)
       }
     } else {
       // Deal with compressed messages

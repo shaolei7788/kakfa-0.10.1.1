@@ -738,6 +738,7 @@ public class NetworkClient implements KafkaClient {
                 //todo 创建获取主题元数据请求
                 ClientRequest clientRequest = request(now, nodeConnectionId, metadataRequest);
                 log.debug("Sending metadata request {} to node {}", metadataRequest, node.id());
+                System.out.println("发送更新元数据请求=========");
                 //在这个方法里面,会将请求存储起来
                 doSend(clientRequest, now);
             } else if (connectionStates.canConnect(nodeConnectionId, now)) {

@@ -37,21 +37,28 @@ import scala.math.ceil
  * @param baseOffset the base offset of the segment that this index is corresponding to.
  * @param maxIndexSize The maximum index size in bytes.
  */
+// maxIndexSize 当前索引文件中最多能够保存的索引项个数
 abstract class AbstractIndex[K, V](@volatile private[this] var _file: File, val baseOffset: Long, val maxIndexSize: Int = -1)
     extends Logging {
 
+  //当前索引文件中索引项的个数
   protected def entrySize: Int
 
   protected val lock = new ReentrantLock
 
+  //内存映射文件
   @volatile
   protected var mmap: MappedByteBuffer = {
+    //如果索引文件不存在，则创建新文件并返回true,反之返回false
     val newlyCreated = _file.createNewFile()
     //也是顺序写磁盘
     val raf = new RandomAccessFile(_file, "rw")
     try {
       /* pre-allocate the file if necessary */
       if(newlyCreated) {
+        //对新创建的索引文件进行扩容
+        // maxIndexSize = 当前索引文件中最多能够保存的索引项个数
+        // entrySize = 当前索引文件中索引项的个数
         if(maxIndexSize < entrySize)
           throw new IllegalArgumentException("Invalid max index size: " + maxIndexSize)
         //设置文件的长度 OffsetIndex文件 maxIndexSize 默认10m
@@ -59,15 +66,18 @@ abstract class AbstractIndex[K, V](@volatile private[this] var _file: File, val 
       }
 
       /* memory-map the file */
+      //进行内存映射
       val len = raf.length()
       val idx : MappedByteBuffer = raf.getChannel.map(FileChannel.MapMode.READ_WRITE, 0, len)
 
       /* set the position in the index for the next entry */
-      if(newlyCreated)
+      if(newlyCreated) {
+        //将新创建的索引文件的position设置为0，从头开始写文件
         idx.position(0)
-      else
-        // if this is a pre-existing index, assume it is valid and set position to last entry
+      } else {
+        //对于原来就存在的索引文件，则将position移动到索引项结束的位置
         idx.position(roundDownToExactMultiple(idx.limit, entrySize))
+      }
       idx
     } finally {
       CoreUtils.swallow(raf.close())
@@ -257,7 +267,8 @@ abstract class AbstractIndex[K, V](@volatile private[this] var _file: File, val 
     var hi = _entries - 1
     while(lo < hi) {
       val mid = ceil(hi/2.0 + lo/2.0).toInt
-      val found = parseEntry(idx, mid)
+      //索引项为mid的位置
+      val found : IndexEntry = parseEntry(idx, mid)
       val compareResult = compareIndexEntry(found, target, searchEntity)
       if(compareResult > 0)
         hi = mid - 1

@@ -185,11 +185,13 @@ public final class Record {
         }
     }
 
+    //记录消息的大小
     public static int recordSize(byte[] key, byte[] value) {
         return recordSize(key == null ? 0 : key.length, value == null ? 0 : value.length);
     }
 
     public static int recordSize(int keySize, int valueSize) {
+        //        4       +      1       +      1           +       8          +       4         + keySize +     4             + valueSize
         return CRC_LENGTH + MAGIC_LENGTH + ATTRIBUTE_LENGTH + TIMESTAMP_LENGTH + KEY_SIZE_LENGTH + keySize + VALUE_SIZE_LENGTH + valueSize;
     }
 

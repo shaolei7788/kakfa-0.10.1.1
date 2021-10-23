@@ -48,17 +48,24 @@ import java.io.{IOException, File}
  //  Log.sizeInBytes = 日志文件的大小
  //  ByteBufferMessageSet.sizeInBytes = 该批消息的大小
 @nonthreadsafe
-class LogSegment(val log: FileMessageSet,
+class LogSegment(
+                 //用于操作对应日志文件
+                 val log: FileMessageSet,
+                 //用于操作对应索引文件
                  val index: OffsetIndex,
                  val timeIndex: TimeIndex,
+                //logsegment中第一消息的offset值
                  val baseOffset: Long,
+                 //索引项之间间隔的最小字节数
                  val indexIntervalBytes: Int,
                  val rollJitterMs: Long,
                  time: Time) extends Logging {
 
+   //标识LogSegment创建时间
   var created = time.milliseconds
 
   /* the number of bytes since we last added an entry in the offset index */
+  //记录自上次添加索引项之后，在日志文件中累计加入的message集合的字节数
   private var bytesSinceLastIndexEntry = 0
 
   /* The timestamp we used for time based log rolling */
@@ -110,8 +117,9 @@ class LogSegment(val log: FileMessageSet,
         offsetOfMaxTimestamp = offsetOfLargestTimestamp
       }
       // append an entry to the index (if needed)
-      // indexIntervalBytes = 4096 每次写了4096个字节的消息就更新一次索引
+      // indexIntervalBytes = 4096 写了超过4096个字节的消息就更新一次索引
       if(bytesSinceLastIndexEntry > indexIntervalBytes) {
+        //todo 添加索引项
         index.append(firstOffset, physicalPosition)
         timeIndex.maybeAppend(maxTimestampSoFar, offsetOfMaxTimestamp)
         bytesSinceLastIndexEntry = 0
@@ -179,9 +187,11 @@ class LogSegment(val log: FileMessageSet,
 
     //
     val adjustedMaxSize =
-      if (minOneMessage) math.max(maxSize, messageSetSize)
-      else maxSize
-
+      if (minOneMessage) {
+        math.max(maxSize, messageSetSize)
+      } else {
+        maxSize
+      }
     // return a log segment but with zero size in the case below
     if (adjustedMaxSize == 0)
       return FetchDataInfo(offsetMetadata, MessageSet.Empty)
@@ -200,7 +210,7 @@ class LogSegment(val log: FileMessageSet,
           return FetchDataInfo(offsetMetadata, MessageSet.Empty, firstMessageSetIncomplete = false)
         }
         //todo 将maxOffset 转化为 对应的物理地址   startPosition.position = 起始偏移量对应的物理位置
-        val mapping = translateOffset(offset, startPosition.position)
+        val mapping: (OffsetPosition, Int) = translateOffset(offset, startPosition.position)
         val endPosition =
           if (mapping == null) {
             //没找到最大偏移量对应的物理地址直接返回logsegment的大小
