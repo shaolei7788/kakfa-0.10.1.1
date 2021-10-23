@@ -47,7 +47,6 @@ public class Producer {
         this.isAsync = isAsync;
     }
 
-
     public void dowork() {
         long startTime = System.currentTimeMillis();
         for (int i = 20; i < 30; i++) {
