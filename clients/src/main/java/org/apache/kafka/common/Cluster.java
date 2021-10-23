@@ -42,8 +42,7 @@ public final class Cluster {
      * 这里有很多数据结构,这些数据结构里面有些数据可能是冗余的
      * 这里面用到的思想就是用空间换时间,设置适当的冗余的数据结构,可以提升性能
      */
-    //一个partition和partition的相关信息之间的对应关系
-    //因为partition有副本
+    //一个partition和partition的相关信息之间的对应关系 因为partition有副本
     private final Map<TopicPartition, PartitionInfo> partitionsByTopicPartition;
     //一个topic对应哪些分区
     private final Map<String, List<PartitionInfo>> partitionsByTopic;

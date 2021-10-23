@@ -90,6 +90,7 @@ public class NetworkReceive implements Receive {
             read += bytesRead;
             //一直到size用完为止
             if (!size.hasRemaining()) {
+                //返回缓冲区的第一个位置
                 size.rewind();
                 int receiveSize = size.getInt();
                 if (receiveSize < 0)

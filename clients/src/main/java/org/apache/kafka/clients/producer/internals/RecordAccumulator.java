@@ -72,7 +72,8 @@ public final class RecordAccumulator {
     // 以下变量仅由发送方线程访问，因此我们不需要保护它们。
     // 是用来记录这个 tp 是否有还有未完成的 RecordBatch
     private final Set<TopicPartition> muted;
-    //使用drain方法批量导出RecordBatch时，为了防止饥饿，使用drainIndex记录上次发送停止时的位置，下次继续从此位置开发发送
+    //drainIndex是batches的下标，记录上次发送停止时的位置，下次继续从此位置开始发送
+    //若一直从索引0的队列开始，可能会出现一直只发送前几个分区的消息的情况，造成其他分区饥饿
     private int drainIndex;
 
     /**
@@ -541,6 +542,7 @@ public final class RecordAccumulator {
                                         break;
                                     } else {
                                         RecordBatch batch = deque.pollFirst();
+                                        //todo 设置 buffer = compressor.buffer()
                                         batch.records.close();
                                         size += batch.records.sizeInBytes();
                                         ready.add(batch);

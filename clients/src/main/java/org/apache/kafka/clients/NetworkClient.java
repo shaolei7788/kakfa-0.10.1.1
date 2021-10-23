@@ -287,7 +287,7 @@ public class NetworkClient implements KafkaClient {
         //步骤一: 封装一个要拉取元数据的请求  DefaultMetadataUpdater#maybeUpdate
         long metadataTimeout = metadataUpdater.maybeUpdate(now);
         try {
-            //步骤二: 不仅有发送请求,也有接收响应 会进行复杂的网络操作
+            //步骤二: 不仅有发送请求,也有接收响应 会进行网络读写
             //TODO 执行网络IO的操作
             this.selector.poll(Utils.min(timeout, metadataTimeout, requestTimeoutMs));
         } catch (IOException e) {
@@ -495,7 +495,7 @@ public class NetworkClient implements KafkaClient {
         for (Send send : this.selector.completedSends()) {
             ClientRequest request = this.inFlightRequests.lastSent(send.destination());
             if (!request.expectResponse()) {
-                //todo 请求不期待响应 completeLastSent 最后一个完成发送请求
+                //todo 请求不期待响应   completeLastSent 最后一个完成发送请求 从队列中移除
                 this.inFlightRequests.completeLastSent(send.destination());
                 responses.add(new ClientResponse(request, now, false, null));
             }
@@ -521,7 +521,6 @@ public class NetworkClient implements KafkaClient {
             Struct body = parseResponse(receive.payload(), req.request().header());
             //TODO 判断是否是关于元数据信息响应
             if (!metadataUpdater.maybeHandleCompletedReceive(req, now, body)) {
-                //是关于元数据信息响应的，不需要添加到responses
                 //不是关于元数据信息响应的，需要添加到responses
 
                 //将解析的结果封装到ClientResponse对象中
@@ -728,14 +727,15 @@ public class NetworkClient implements KafkaClient {
                 this.metadataFetchInProgress = true;
                 MetadataRequest metadataRequest;
                 //判断是否需要获取所有主题的元数据
-                if (metadata.needMetadataForAllTopics())
+                if (metadata.needMetadataForAllTopics()) {
                     //封装请求,获取所有topics
                     //但是我们获取元数据的时候,只获取自己要发送消息的对应的topic的元数据的信息
                     metadataRequest = MetadataRequest.allTopics();
-                else
+                }else {
                     //只拉取接收我们发送的消息的topics
                     metadataRequest = new MetadataRequest(new ArrayList<>(metadata.topics()));
-                //为给定的主题创建元数据请求
+                }
+                //todo 创建获取主题元数据请求
                 ClientRequest clientRequest = request(now, nodeConnectionId, metadataRequest);
                 log.debug("Sending metadata request {} to node {}", metadataRequest, node.id());
                 //在这个方法里面,会将请求存储起来

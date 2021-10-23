@@ -109,6 +109,7 @@ public class Compressor {
 
         // create the stream
         bufferStream = new ByteBufferOutputStream(buffer);
+        //装饰模式 (包装模式)
         appendStream = wrapForOutput(bufferStream, type, COMPRESSION_DEFAULT_BUFFER_SIZE);
     }
 
@@ -247,11 +248,14 @@ public class Compressor {
         try {
             switch (type) {
                 case NONE:
+                    //直接new
                     return new DataOutputStream(buffer);
                 case GZIP:
+                    //直接new GZIPOutputStream 是JDK自带的包
                     return new DataOutputStream(new GZIPOutputStream(buffer, bufferSize));
                 case SNAPPY:
                     try {
+                        //通过反射的方式获取 Snappy 需要引入额外的依赖包 为了在不使用Snappy压缩方式时，减少依赖包
                         OutputStream stream = (OutputStream) snappyOutputStreamSupplier.get().newInstance(buffer, bufferSize);
                         return new DataOutputStream(stream);
                     } catch (Exception e) {

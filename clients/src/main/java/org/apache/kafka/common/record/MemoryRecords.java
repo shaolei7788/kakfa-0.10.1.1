@@ -122,6 +122,7 @@ public class MemoryRecords implements Records {
      * the checking should be based on the capacity of the initialized buffer rather than the write limit in order
      * to accept this single record.
      */
+    //根据Compressor估算的已写字节数，估计MemoryRecords剩余空间是否够写入指定的数据
     public boolean hasRoomFor(byte[] key, byte[] value) {
         if (!this.writable)
             return false;
@@ -155,6 +156,7 @@ public class MemoryRecords implements Records {
     /**
      * The size of this record set
      */
+    //
     public int sizeInBytes() {
         if (writable) {
             return compressor.buffer().position();

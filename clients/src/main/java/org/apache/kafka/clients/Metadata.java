@@ -178,10 +178,11 @@ public final class Metadata {
         //如果sender线程更新了元数据并且更新成功了,那么版本号就会累加
         while (this.version <= lastVersion) {
             //如果还有剩余时间
-            if (remainingWaitMs != 0)
-                //我们没有去看sender的源码,但是我们可以知道sender线程会做这样一件事:当元数据更新之后,就会唤醒这个线程
+            if (remainingWaitMs != 0) {
+                //todo 当元数据更新之后,就会唤醒这个线程  对应 Metadata # update # notifyAll
                 //这个线程有两种情况会被唤醒: 1.元数据更新了,被sender唤醒;2.时间到了
                 wait(remainingWaitMs);//让当前线程阻塞,比如remainingWaitMs是10秒钟,那么就等10s
+            }
             //如果代码执行到这里,说明要么被唤醒了,要么到时间了
             //计算一下花了多长时间
             long elapsed = System.currentTimeMillis() - begin;
@@ -276,8 +277,8 @@ public final class Metadata {
                 log.info("Cluster ID: {}", cluster.clusterResource().clusterId());
             clusterResourceListeners.onUpdate(cluster.clusterResource());
         }
-        //唤醒那个wait线程
-        //第一次代码运行到这里的时候,整个流程通过notifyAll唤醒线程就走通了
+        //todo 唤醒那个wait线程  对应 Metadata # awaitUpdate # wait
+        // 第一次代码运行到这里的时候,整个流程通过notifyAll唤醒线程就走通了
         notifyAll();
         log.debug("Updated cluster metadata version {} to {}", this.version, this.cluster);
     }

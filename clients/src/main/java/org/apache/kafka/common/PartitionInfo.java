@@ -17,6 +17,7 @@ package org.apache.kafka.common;
  * 主题中分区的信息
  */
 public class PartitionInfo {
+
     //主题名称
     private final String topic;
     //分区编号

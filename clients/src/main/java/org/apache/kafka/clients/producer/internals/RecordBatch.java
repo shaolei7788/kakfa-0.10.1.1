@@ -73,6 +73,7 @@ public final class RecordBatch {
      * @return The RecordSend corresponding to this record or null if there isn't sufficient room.
      */
     public FutureRecordMetadata tryAppend(long timestamp, byte[] key, byte[] value, Callback callback, long now) {
+        //根据Compressor估算的已写字节数，估计MemoryRecords剩余空间是否够写入指定的数据
         if (!this.records.hasRoomFor(key, value)) {
             return null;
         } else {

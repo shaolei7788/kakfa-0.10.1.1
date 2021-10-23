@@ -82,6 +82,7 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
         case ApiKeys.FETCH => handleFetchRequest(request)
         //todo 消费者列举偏移量 从分区主副本拉取
         case ApiKeys.LIST_OFFSETS => handleOffsetRequest(request)
+        //todo 生产者获取集群元数据
         case ApiKeys.METADATA => handleTopicMetadataRequest(request)
         //todo 请求控制副本的leader follower 切换
         case ApiKeys.LEADER_AND_ISR => handleLeaderAndIsrRequest(request)
@@ -844,6 +845,7 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
       topicResponses
     } else {
       val nonExistentTopics = topics -- topicResponses.map(_.topic).toSet
+      //不存在的topic响应
       val responsesForNonExistentTopics = nonExistentTopics.map { topic =>
         if (topic == Topic.GroupMetadataTopicName) {
           createGroupMetadataTopic()

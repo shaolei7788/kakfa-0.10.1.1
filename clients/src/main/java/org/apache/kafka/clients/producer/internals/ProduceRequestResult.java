@@ -24,7 +24,7 @@ import org.apache.kafka.common.TopicPartition;
 
 /**
  * A class that models the future completion of a produce request for a single partition. There is one of these per
- * partition in a produce request and it is shared by all the {@link RecordMetadata} instances that are batched together
+ * partition in a produce request and it is shared by all the RecordMetadata instances that are batched together
  * for the same partition in the request.
  */
 public final class ProduceRequestResult {
@@ -49,6 +49,7 @@ public final class ProduceRequestResult {
         this.topicPartition = topicPartition;
         this.baseOffset = baseOffset;
         this.error = error;
+        //唤醒 latch.await()
         this.latch.countDown();
     }
 

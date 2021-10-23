@@ -32,11 +32,12 @@ public class Producer {
     public static void main(String[] args) {
         Producer producer = new Producer("first", false);
         producer.dowork();
+        System.out.println("发送完成");
     }
 
     public Producer(String topic, Boolean isAsync) {
         Properties props = new Properties();
-        props.put("bootstrap.servers", "localhost:9092");
+        props.put("bootstrap.servers", "hadoop5:9092");
         props.put("client.id", "DemoProducer");
         //必须要指定
         props.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");
@@ -49,14 +50,19 @@ public class Producer {
 
     public void dowork() {
         long startTime = System.currentTimeMillis();
-        for (int i = 0; i < 10; i++) {
+        for (int i = 20; i < 30; i++) {
             //同步发送
             producer.send(new ProducerRecord<String, String>(topic,"hello" +i));
             //异步发送
 //            producer.send(new ProducerRecord<>(topic, String.valueOf(i), "hello" + i),
 //                    new DemoCallBack(startTime, String.valueOf(i), "hello" + i));
-            //producer.close();
         }
+        try {
+            Thread.sleep(10000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        producer.close();
     }
 }
 

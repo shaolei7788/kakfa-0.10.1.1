@@ -120,7 +120,7 @@ public class KafkaChannel {
         return socket.getInetAddress().toString();
     }
 
-    //是为了保证服务端的处理性能，客户端网络连接对象有一个限制条件，针对同一个服务端，如果上一个客户端请求还没有发送完成，则不允许发送新的客户端请求
+    //是为了保证服务端的处理性能，客户端网络连接对象有一个限制条件，针对同一个服务端，如果客户端上一个请求还没有发送完成，则不允许发送新的客户端请求
     //KafkaChannel 一次只能发送一个send请求
     public void setSend(Send send) {
         if (this.send != null) {

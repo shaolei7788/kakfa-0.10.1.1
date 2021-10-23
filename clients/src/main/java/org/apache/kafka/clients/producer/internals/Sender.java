@@ -366,15 +366,16 @@ public class Sender implements Runnable {
                     Errors error = Errors.forCode(partResp.errorCode);
                     //获取当前分区的批记录
                     RecordBatch batch = batches.get(tp);
-                    //对响应进行处理
+                    //对响应进行处理  partResp.baseOffset = 基准偏移量
                     completeBatch(batch, error, partResp.baseOffset, partResp.timestamp, correlationId, now);
                 }
                 this.sensors.recordLatency(response.request().request().destination(), response.requestLatencyMs());
                 this.sensors.recordThrottleTime(response.request().request().destination(), produceResponse.getThrottleTime());
             } else {
                 // this is the acks = 0 case, just complete all requests
-                for (RecordBatch batch : batches.values())
+                for (RecordBatch batch : batches.values()) {
                     completeBatch(batch, Errors.NONE, -1L, Record.NO_TIMESTAMP, correlationId, now);
+                }
             }
         }
     }
