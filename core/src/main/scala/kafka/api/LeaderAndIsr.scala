@@ -55,8 +55,8 @@ object PartitionStateInfo {
   }
 }
 
-case class PartitionStateInfo(leaderIsrAndControllerEpoch: LeaderIsrAndControllerEpoch,
-                              allReplicas: Set[Int]) {
+case class PartitionStateInfo(leaderIsrAndControllerEpoch: LeaderIsrAndControllerEpoch, allReplicas: Set[Int]) {
+
   def replicationFactor = allReplicas.size
 
   def writeTo(buffer: ByteBuffer) {

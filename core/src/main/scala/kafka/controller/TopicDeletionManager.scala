@@ -103,7 +103,7 @@ class TopicDeletionManager(controller: KafkaController,
   val topicsToBeDeleted: mutable.Set[String] = mutable.Set.empty[String] ++ initialTopicsToBeDeleted
   val partitionsToBeDeleted: mutable.Set[TopicAndPartition] = topicsToBeDeleted.flatMap(controllerContext.partitionsForTopic)
   val deleteLock = new ReentrantLock()
-  //删除无效的主题
+  //删除无效的主题 只有不在topicsIneligibleForDeletion中的topic才允许删除
   val topicsIneligibleForDeletion: mutable.Set[String] = mutable.Set.empty[String] ++
     (initialTopicsIneligibleForDeletion & initialTopicsToBeDeleted)
   val deleteTopicsCond = deleteLock.newCondition()
@@ -187,8 +187,8 @@ class TopicDeletionManager(controller: KafkaController,
       val replicasThatFailedToDelete = replicas.filter(r => isTopicQueuedUpForDeletion(r.topic))
       if(replicasThatFailedToDelete.nonEmpty) {
         val topics = replicasThatFailedToDelete.map(_.topic)
-        debug("Deletion failed for replicas %s. Halting deletion for topics %s"
-          .format(replicasThatFailedToDelete.mkString(","), topics))
+        debug("Deletion failed for replicas %s. Halting deletion for topics %s".format(replicasThatFailedToDelete.mkString(","), topics))
+        //副本状态机将副本状态设置为删除失败
         controller.replicaStateMachine.handleStateChanges(replicasThatFailedToDelete, ReplicaDeletionIneligible)
         markTopicIneligibleForDeletion(topics)
         resumeTopicDeletionThread()

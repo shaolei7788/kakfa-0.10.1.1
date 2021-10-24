@@ -87,8 +87,9 @@ class ControllerContext(val zkUtils: ZkUtils,
     liveBrokerIdsUnderlying = liveBrokersUnderlying.map(_.id)
   }
 
-  // getter
+  // 存活的Broker信息
   def liveBrokers = liveBrokersUnderlying.filter(broker => !shuttingDownBrokerIds.contains(broker.id))
+  // 存活的BrokerId
   def liveBrokerIds = liveBrokerIdsUnderlying -- shuttingDownBrokerIds
 
   def liveOrShuttingDownBrokerIds = liveBrokerIdsUnderlying
@@ -130,12 +131,12 @@ class ControllerContext(val zkUtils: ZkUtils,
       .filter { case(topicAndPartition, replicas) => topicAndPartition.topic.equals(topic) }.keySet
   }
 
-  //todo 获取所有可用broker中保存的副本
+  //todo 集群中所有存活的副本
   def allLiveReplicas(): Set[PartitionAndReplica] = {
     replicasOnBrokers(liveBrokerIds)
   }
 
-  //todo 获取指定分区集合的副本
+  //todo 获取指定分区集合的所有副本
   def replicasForPartition(partitions: collection.Set[TopicAndPartition]): collection.Set[PartitionAndReplica] = {
     partitions.flatMap { p =>
       val replicas = partitionReplicaAssignment(p)
@@ -182,6 +183,11 @@ object KafkaController extends Logging {
   }
 }
 
+//作用
+// 1 broker节点上线或下线时，处理broker的故障转移
+// 2 创建或删除topic，增加或减少分区 处理分区的重分配，分区选举
+// 3 管理分区状态机 副本状态机
+// 4 管理多种类型的监听器
 class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerState: BrokerState, time: Time, metrics: Metrics, threadNamePrefix: Option[String] = None) extends Logging with KafkaMetricsGroup {
   this.logIdent = "[Controller " + config.brokerId + "]: "
   private var isRunning = true
@@ -190,10 +196,10 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
   //todo 缓存了zookeeper中记录的整个集群元数据，例如 可用broker,all topic,分区，副本消息  启动控制器时从zk初始化数据
   val controllerContext = new ControllerContext(zkUtils, config.zkSessionTimeoutMs)
 
-  //用于管理集器中所有partition状态的状态机
+  //分区状态机，管理分区的状态
   val partitionStateMachine = new PartitionStateMachine(this)
 
-  //用于管理集器中所有replica状态的状态机
+  //副本状态机，管理副本的状态
   val replicaStateMachine = new ReplicaStateMachine(this)
 
   //主要用于Controller Leader选举
@@ -206,16 +212,16 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
   //用于对指定的topic进行删除
   var deleteTopicManager: TopicDeletionManager = null
 
-  //todo PartitionLeaderSelector 四个选举 分区主副本的类
+  //todo PartitionLeaderSelector 四个选举 分区主副本选举类
   val offlinePartitionSelector = new OfflinePartitionLeaderSelector(controllerContext, config)
   private val reassignedPartitionLeaderSelector = new ReassignedPartitionLeaderSelector(controllerContext)
   private val preferredReplicaPartitionLeaderSelector = new PreferredReplicaPartitionLeaderSelector(controllerContext)
   private val controlledShutdownPartitionLeaderSelector = new ControlledShutdownLeaderSelector(controllerContext)
   //实现了向broker批量发送请求的功能
   private val brokerRequestBatch = new ControllerBrokerRequestBatch(this)
-  //重新分配分区
+  //重新分配分区监听器
   private val partitionReassignedListener = new PartitionsReassignedListener(this)
-  //选举最优的副本作为分区的主副本
+  //选举最优的副本作为分区的主副本 监听器
   private val preferredReplicaElectionListener = new PreferredReplicaElectionListener(this)
   //isr 发生变化时的监听器，更新元数据
   private val isrChangeNotificationListener = new IsrChangeNotificationListener(this)
@@ -285,7 +291,7 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
       inLock(controllerContext.controllerLock) {
         if (!controllerContext.liveOrShuttingDownBrokerIds.contains(id))
           throw new BrokerNotAvailableException("Broker id %d does not exist.".format(id))
-
+        //将正在关闭的broker添加到controllerContext.shuttingDownBrokerIds
         controllerContext.shuttingDownBrokerIds.add(id)
         debug("All shutting down brokers: " + controllerContext.shuttingDownBrokerIds.mkString(","))
         debug("Live brokers: " + controllerContext.liveBrokerIds.mkString(","))
@@ -346,7 +352,7 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
   }
 
 
-  // todo 代理节点变成leader时，会调用       重点：只有成为kafka controller leader 才有下面这些监听器
+  // todo 代理节点变成leader时，会调用   重点：只有成为kafka controller leader 才有下面这些监听器
   def onControllerFailover() {
     if(isRunning) {
       info("Broker %d starting become controller state transition".format(config.brokerId))
@@ -367,13 +373,14 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
       //todo 1 初始化控制器上下文 2 从zk读取数据 获取topic  3 读取zk数据更新分区leader缓存信息 4 启动通道管理器
       // 会从zk读取集群的所有分区和副本，所有初始化控制器上下文后才可以启动状态机
       initializeControllerContext()
-
       //todo 因为分区有多个副本，只有集群中的所有副本状态都初始化完成，才可以初始化分区的状态，所以控制会先启动副本状态机，然后才启动分区状态机
-      // 启动两个状态机
-      //初始化副本状态 1 副本如果存活，状态是上线，2 如果不存活状态为 删除失败
+      //启动副本状态机 初始化副本状态
+      // 1 如果活着的brokerId集合包含replica，状态是上线，否则状态就是 删除失败
+      // 2 针对存活的副本，触发上线到上线操作
       replicaStateMachine.startup()
-      //初始化分区状态 如果zk上面由zk信息 controllerContext.partitionLeadershipInfo 就有值， 则有主副本
-      // 1 分区有主副本，初始化为上线
+      //启动分区状态机
+      // 初始化分区状态 如果zk上面由zk信息 controllerContext.partitionLeadershipInfo 就有值， 则有主副本
+      // 1 分区有主副本，且存活，初始化为上线
       // 2 分区有主副本，但不存活，初始化为下线
       // 3 分区没有主副本，初始化为新建
       partitionStateMachine.startup()
@@ -499,6 +506,7 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
       info(("Some replicas %s for topics scheduled for deletion %s are on the newly restarted brokers %s. " +
         "Signaling restart of topic deletion for these topics").format(replicasForTopicsToBeDeleted.mkString(","),
         deleteTopicManager.topicsToBeDeleted.mkString(","), newBrokers.mkString(",")))
+      //恢复删除topic
       deleteTopicManager.resumeDeletionForTopics(replicasForTopicsToBeDeleted.map(_.topic))
     }
   }
@@ -517,8 +525,7 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
    */
   def onBrokerFailure(deadBrokers: Seq[Int]) {
     info("Broker failure callback for %s".format(deadBrokers.mkString(",")))
-    val deadBrokersThatWereShuttingDown =
-      deadBrokers.filter(id => controllerContext.shuttingDownBrokerIds.remove(id))
+    val deadBrokersThatWereShuttingDown = deadBrokers.filter(id => controllerContext.shuttingDownBrokerIds.remove(id))
     info("Removed %s from list of shutting down brokers.".format(deadBrokersThatWereShuttingDown))
     val deadBrokersSet = deadBrokers.toSet
     // 没有leader的分区
@@ -535,11 +542,13 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
     // 不需要删除的副本，状态转为下线，需要删除的则由broker下线，先标记为删除失败
     replicaStateMachine.handleStateChanges(activeReplicasOnDeadBrokers, OfflineReplica)
     // check if topic deletion state for the dead replicas needs to be updated
+    //topic正在删除的副本
     val replicasForTopicsToBeDeleted = allReplicasOnDeadBrokers.filter(p => deleteTopicManager.isTopicQueuedUpForDeletion(p.topic))
     if(replicasForTopicsToBeDeleted.nonEmpty) {
       // it is required to mark the respective replicas in TopicDeletionFailed state since the replica cannot be
       // deleted when the broker is down. This will prevent the replica from being in TopicDeletionStarted state indefinitely
       // since topic deletion cannot be retried until at least one replica is in TopicDeletionStarted state
+      //副本状态机将副本状态设置为删除失败
       deleteTopicManager.failReplicaDeletion(replicasForTopicsToBeDeleted)
     }
 
@@ -557,13 +566,14 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
    * 2. Invokes the new partition callback
    * 3. Send metadata request with the new topic to all brokers so they allow requests for that topic to be served
    */
+  //创建新的topic
   def onNewTopicCreation(topics: Set[String], newPartitions: Set[TopicAndPartition]) {
     info("New topic creation callback for %s".format(newPartitions.mkString(",")))
-    //todo 给新增加的topic 注册分区改变监听器
+    //todo 给新增加的topic 注册分区改变监听器  path = /brokers/topics/[first]
     topics.foreach(topic => partitionStateMachine.registerPartitionChangeListener(topic))
     //todo 将分区的状态从初始的 不存在状态 改为 新建状态
     //todo 将副本的状态从初始的 不存在状态 改为 新建状态
-    //todo 将分区的状态从 新建状态 改为 上线状态
+    //todo 将分区的状态从 新建状态 改为 上线状态 并选举分区主副本
     //todo 将副本的状态从 新建状态 改为 上线状态
     onNewPartitionCreation(newPartitions)
   }
@@ -574,11 +584,12 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
    * 1. Move the newly created partitions to the NewPartition state
    * 2. Move the newly created partitions from NewPartition->OnlinePartition state
    */
+  //创建新的分区
   def onNewPartitionCreation(newPartitions: Set[TopicAndPartition]) {
     info("New partition creation callback for %s".format(newPartitions.mkString(",")))
     //todo 将分区的状态从初始的 不存在状态 改为 NewPartition(新建状态)
     partitionStateMachine.handleStateChanges(newPartitions, NewPartition)
-    //todo 将副本的状态从初始的 不存在状态 改为 NewPartition(新建状态) replicasForPartition 是获取指定分区集合的副本
+    //todo 将副本的状态从初始的 不存在状态 改为 NewPartition(新建状态)    replicasForPartition 是获取指定分区集合的副本
     replicaStateMachine.handleStateChanges(controllerContext.replicasForPartition(newPartitions), NewReplica)
     //todo offlinePartitionSelector 分区Leader选择器 分区从新建状态到上线状态并不会用到offlinePartitionSelector
     // 只有下线状态(broker挂了)，上线状态(分区有主副本且活着，但是控制器选区其它副本作为leader) 到上线状态
@@ -771,7 +782,7 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
       //todo 注册session会话超时监听器  SessionExpirationListener#handleNewSession  会话超时会进行选举
       registerSessionExpirationListener()
       isRunning = true
-      //todo ZookeeperLeaderElector#startup 主要用于Controller Leader选举
+      //todo controllerElector ZK选举器 ，ZookeeperLeaderElector#startup 主要用于Controller Leader选举
       controllerElector.startup
       info("Controller startup complete")
     }

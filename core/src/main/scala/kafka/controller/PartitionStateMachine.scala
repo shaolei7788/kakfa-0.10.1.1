@@ -28,7 +28,18 @@ import org.I0Itec.zkclient.{IZkDataListener, IZkChildListener}
 import org.I0Itec.zkclient.exception.ZkNodeExistsException
 import kafka.controller.Callbacks.CallbackBuilder
 import kafka.utils.CoreUtils._
-
+/**
+ * This class represents the state machine for partitions. It defines the states that a partition can be in, and
+ * transitions to move the partition to another legal state. The different states that a partition can be in are -
+ * 1. NonExistentPartition: This state indicates that the partition was either never created or was created and then
+ *                          deleted. Valid previous state, if one exists, is OfflinePartition
+ * 2. NewPartition        : After creation, the partition is in the NewPartition state. In this state, the partition should have
+ *                          replicas assigned to it, but no leader/isr yet. Valid previous states are NonExistentPartition
+ * 3. OnlinePartition     : Once a leader is elected for a partition, it is in the OnlinePartition state.
+ *                          Valid previous states are NewPartition/OfflinePartition
+ * 4. OfflinePartition    : If, after successful leader election, the leader for partition dies, then the partition
+ *                          moves to the OfflinePartition state. Valid previous states are NewPartition/OnlinePartition
+ */
 /**
  * 1. NonExistentPartition: 分区不存在
  * 2. NewPartition        : 分区被创建后就处于此状态
@@ -41,7 +52,7 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
   private val controllerContext = controller.controllerContext
   private val controllerId = controller.config.brokerId
   private val zkUtils = controllerContext.zkUtils
-  //记录了每个分区对应的PartitionState状态
+  //记录了集群中每个分区对应的PartitionState状态
   private val partitionState : mutable.Map[TopicAndPartition, PartitionState] = mutable.Map.empty
   //用于向指定的broker批量发送请求
   private val brokerRequestBatch = new ControllerBrokerRequestBatch(controller)
@@ -120,15 +131,15 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
       brokerRequestBatch.newBatch()
       // try to move all partitions in NewPartition or OfflinePartition state to OnlinePartition state except partitions
       // that belong to topics to be deleted
-      //遍历分区状态
+      //遍历集群所有的分区状态
       for((topicAndPartition, partitionState) <- partitionState
           if !controller.deleteTopicManager.isTopicQueuedUpForDeletion(topicAndPartition.topic)) {
-        //判断 分区是否离线或者新建
-        if(partitionState.equals(OfflinePartition) || partitionState.equals(NewPartition)) {
-          //todo 处理分区 上线分区
-          handleStateChange(topicAndPartition.topic, topicAndPartition.partition, OnlinePartition, controller.offlinePartitionSelector,
-                            (new CallbackBuilder).build)
-        }
+            //判断 分区是否离线或者新建
+            if(partitionState.equals(OfflinePartition) || partitionState.equals(NewPartition)) {
+              //todo 处理分区 上线分区
+              handleStateChange(topicAndPartition.topic, topicAndPartition.partition, OnlinePartition,
+                  controller.offlinePartitionSelector, (new CallbackBuilder).build)
+            }
       }
       brokerRequestBatch.sendRequestsToBrokers(controller.epoch)
     } catch {
@@ -268,7 +279,7 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
    * @param topicAndPartition   The topic/partition whose leader and isr path is to be initialized
    */
   private def initializeLeaderAndIsrForPartition(topicAndPartition: TopicAndPartition) {
-    //从上下文获取AR 不会变
+    //从上下文获取AR 不会变  创建topic时，分区分配的信息在zk节点 /brokers/topics/first  内容为 {"version":1,"partitions":{"1":[0],"0":[0]}}
     val replicaAssignment = controllerContext.partitionReplicaAssignment(topicAndPartition)
     //存活的AR
     val liveAssignedReplicas = replicaAssignment.filter(r => controllerContext.liveBrokerIds.contains(r))
@@ -296,7 +307,7 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
             //todo data  example  {"controller_epoch":6,"leader":1,"version":1,"leader_epoch":0,"isr":[1,0]}
             zkUtils.leaderAndIsrZkData(leaderIsrAndControllerEpoch.leaderAndIsr, controller.epoch))
           controllerContext.partitionLeadershipInfo.put(topicAndPartition, leaderIsrAndControllerEpoch)
-          //向分区的所有存活副本发送分区的主副本，ISR,AR信息
+          //todo brokerRequestBatch 添加LeaderAndIsrRequest请求  向分区的所有存活副本发送分区的主副本，ISR,AR信息
           brokerRequestBatch.addLeaderAndIsrRequestForBrokers(liveAssignedReplicas, topicAndPartition.topic,
             topicAndPartition.partition, leaderIsrAndControllerEpoch, replicaAssignment)
         } catch {
@@ -393,7 +404,9 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
   }
 
   def registerPartitionChangeListener(topic: String) = {
+    //注册分区修改监听器
     partitionModificationsListeners.put(topic, new PartitionModificationsListener(topic))
+    //监控数据变化  /brokers/topics/[first]
     zkUtils.zkClient.subscribeDataChanges(getTopicPath(topic), partitionModificationsListeners(topic))
   }
 
@@ -431,6 +444,7 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
     this.logIdent = "[TopicChangeListener on Controller " + controller.config.brokerId + "]: "
     @throws(classOf[Exception])
     def handleChildChange(parentPath : String, children : java.util.List[String]) {
+      println("TopicChangeListener path:"+ parentPath + ",data:"+ java.util.Arrays.toString(children.toArray()))
       inLock(controllerContext.controllerLock) {
         if (hasStarted.get) {
           try {
@@ -456,7 +470,7 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
             if(newTopics.nonEmpty) {
               //todo  1 给新增加的topic 注册分区改变监听器
               //todo  2 控制器分别对分区，所有的副本进行状态转换，最后分区和副本都转为上线状态
-              // onNewTopicCreation 新建一个不存在的topic
+              // onNewTopicCreation 创建新的topic
               controller.onNewTopicCreation(newTopics, addedPartitionReplicaAssignment.keySet.toSet)
             }
           } catch {
@@ -483,6 +497,7 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
      */
     @throws(classOf[Exception])
     def handleChildChange(parentPath : String, children : java.util.List[String]) {
+      println("DeleteTopicsListener path:"+ parentPath + ",data:"+ java.util.Arrays.toString(children.toArray()))
       inLock(controllerContext.controllerLock) {
         var topicsToBeDeleted = {
           import JavaConversions._
@@ -531,18 +546,21 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
 
 
   //todo 会监听 /brokers/topics/[topic] 节点数据的变化 当topic的分区发生变化，监听器会处理分区增加的事件
-  // 更改分区的监听器  /brokers/topics/first  {"version":1,"partitions":{"2":[0,2],"1":[2,1],"0":[1,0]}}
+  // 更改分区的监听器  /brokers/topics/first
+  // old = {"version":1,"partitions":{"1":[2,1],"0":[1,0]}}
+  // new = {"version":1,"partitions":{"2":[0,2],"1":[2,1],"0":[1,0]}}  代表要新增分区
   class PartitionModificationsListener(topic: String) extends IZkDataListener with Logging {
     this.logIdent = "[AddPartitionsListener on " + controller.config.brokerId + "]: "
     //分区改变事情
     @throws(classOf[Exception])
     def handleDataChange(dataPath : String, data: Object) {
+      println("DeleteTopicsListener path:"+ dataPath + ",data:"+ data)
       inLock(controllerContext.controllerLock) {
         try {
           info(s"Partition modification triggered $data for path $dataPath")
           // 注册在/brokers/topics/[topic],内容为该主题所有分区对应的副本集
           val partitionReplicaAssignment  = zkUtils.getReplicaAssignmentForTopics(List(topic))
-          // 不在上下文中表示新增的分区，因为初始化时已经读取到上下文对象中
+          // 新增加的分区   不在上下文中表示新增的分区，因为初始化时已经读取到上下文对象中
           val partitionsToBeAdded = partitionReplicaAssignment.filter(p =>
             !controllerContext.partitionReplicaAssignment.contains(p._1))
           //判断分区是否能被删除
@@ -552,10 +570,10 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
           else {
             if (partitionsToBeAdded.nonEmpty) {
               info("New partitions to be added %s".format(partitionsToBeAdded))
-              //上下文partitionReplicaAssignment 增加对象
+              //上下文partitionReplicaAssignment 增加新增加的分区
               controllerContext.partitionReplicaAssignment.++=(partitionsToBeAdded)
               //todo 控制器处理分区的新增事件
-              // onNewPartitionCreation 为已有的topic创建主题
+              // onNewPartitionCreation 创建新的分区
               controller.onNewPartitionCreation(partitionsToBeAdded.keySet.toSet)
             }
           }

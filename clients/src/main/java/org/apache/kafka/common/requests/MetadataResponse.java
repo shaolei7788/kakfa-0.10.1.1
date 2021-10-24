@@ -326,9 +326,11 @@ public class MetadataResponse extends AbstractRequestResponse {
     }
 
     public static class TopicMetadata {
+        //错误码
         private final Errors error;
         private final String topic;
         private final boolean isInternal;
+        //分区的元数据信息  一个topic 有多个分区 所以是list
         private final List<PartitionMetadata> partitionMetadata;
 
         public TopicMetadata(Errors error,

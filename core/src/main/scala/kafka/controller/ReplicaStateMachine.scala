@@ -53,7 +53,7 @@ import kafka.utils.CoreUtils._
  * 4. NonExistentReplica: 副本被成功删除后，状态为不存在
  * 5. ReplicaDeletionStarted: 开始删除副本
  * 6. ReplicaDeletionSuccessful: 成功删除副本
- * 7. ReplicaDeletionIneligible: 表示副本删除失败
+ * 7. ReplicaDeletionIneligible: 副本删除失败
  */
 //todo 用于管理集器中所有replica状态的状态机 保存了集群所有的副本以及对应的副本状态
 // 正常流程是 不存在状态 > 新建状态 > 上线状态 >
@@ -80,7 +80,7 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
    * Then triggers the OnlineReplica state change for all replicas.
    */
   def startup() {
-    //todo 初始化副本状态 副本如果存活，状态是上线，如果不存活状态为 删除失败
+    //todo 初始化副本状态 如果活着的brokerId集合包含replica，状态是上线，否则状态就是 删除失败
     initializeReplicaState()
     // set started flag
     hasStarted.set(true)
@@ -241,18 +241,19 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
               // add this replica to the assigned replicas list for its partition
               val currentAssignedReplicas = controllerContext.partitionReplicaAssignment(topicAndPartition)
               if(!currentAssignedReplicas.contains(replicaId)) {
-                // partitionReplicaAssignment 记录了每个分区的AR集合 放入数据
+                //todo 将该副本添加到AR中 partitionReplicaAssignment 记录了每个分区的AR集合 放入数据
                 controllerContext.partitionReplicaAssignment.put(topicAndPartition, currentAssignedReplicas :+ replicaId)
               }
               stateChangeLogger.trace("Controller %d epoch %d changed state of replica %d for partition %s from %s to %s"
-                                        .format(controllerId, controller.epoch, replicaId, topicAndPartition, currState,
-                                                targetState))
+                                        .format(controllerId, controller.epoch, replicaId, topicAndPartition, currState, targetState))
             case _ =>
               // check if the leader for this partition ever existed
+              //获取分区的leader副本
               controllerContext.partitionLeadershipInfo.get(topicAndPartition) match {
                 case Some(leaderIsrAndControllerEpoch) =>
-                  brokerRequestBatch.addLeaderAndIsrRequestForBrokers(List(replicaId), topic, partition, leaderIsrAndControllerEpoch,
-                    replicaAssignment)
+                  //存在分区的主副本
+                  //  List(replicaId) = brokerIds  即需要将LeaderAndIsr请求发送给List(replicaId)这些broker
+                  brokerRequestBatch.addLeaderAndIsrRequestForBrokers(List(replicaId), topic, partition, leaderIsrAndControllerEpoch, replicaAssignment)
                   replicaState.put(partitionAndReplica, OnlineReplica)
                   stateChangeLogger.trace("Controller %d epoch %d changed state of replica %d for partition %s from %s to %s"
                     .format(controllerId, controller.epoch, replicaId, topicAndPartition, currState, targetState))
@@ -260,6 +261,7 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
                   // started a log for that partition and does not have a high watermark value for this partition
               }
           }
+          //上线副本
           replicaState.put(partitionAndReplica, OnlineReplica)
         case OfflineReplica =>
           assertValidPreviousStates(partitionAndReplica,
@@ -350,6 +352,7 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
    */
   //副本如果存活，状态是上线，如果不存活状态为 删除失败
   private def initializeReplicaState() {
+    //遍历上下文的分区AR
     for((topicPartition, assignedReplicas) <- controllerContext.partitionReplicaAssignment) {
       val topic = topicPartition.topic
       val partition = topicPartition.partition
@@ -357,8 +360,9 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
       assignedReplicas.foreach { replicaId =>
         //创建分区副本样例类
         val partitionAndReplica = PartitionAndReplica(topic, partition, replicaId)
+        //如果broker是正在启动走到这里  controllerContext.liveBrokerIds 是空的
         if (controllerContext.liveBrokerIds.contains(replicaId)) {
-          //todo 副本如果存活，状态是上线
+          //todo 活着的brokerId集合包含replica，状态是上线
           replicaState.put(partitionAndReplica, OnlineReplica)
         } else {
           //todo 如果不存活状态为 删除失败
@@ -377,11 +381,10 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
   // 新启动的broker之前不在集群中，没有分配到任何分区，控制器不会处理分区和副本的状态改变
   // 重新启动的broker之前在集群中，有分配到任何分区，控制器会处理分区和副本的状态改变
   class BrokerChangeListener() extends IZkChildListener with Logging {
-
     this.logIdent = "[BrokerChangeListener on Controller " + controller.config.brokerId + "]: "
-
     //currentBrokerList broker列表
     def handleChildChange(parentPath : String, currentBrokerList : java.util.List[String]) {
+      println("DeleteTopicsListener path:"+ parentPath + ",data:"+ java.util.Arrays.toString(currentBrokerList.toArray()))
       info("Broker change listener fired for path %s with children %s".format(parentPath, currentBrokerList.sorted.mkString(",")))
       inLock(controllerContext.controllerLock) {
         if (hasStarted.get) {
@@ -394,7 +397,7 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
               val liveOrShuttingDownBrokerIds = controllerContext.liveOrShuttingDownBrokerIds
               //新加的broker id
               val newBrokerIds = curBrokerIds -- liveOrShuttingDownBrokerIds
-              //挂了的broker id
+              //下线的broker id
               val deadBrokerIds = liveOrShuttingDownBrokerIds -- curBrokerIds
               //新加的Broker集合
               val newBrokers = curBrokers.filter(broker => newBrokerIds(broker.id))

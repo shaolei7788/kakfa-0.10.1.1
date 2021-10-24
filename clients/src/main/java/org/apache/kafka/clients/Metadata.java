@@ -43,8 +43,7 @@ import java.util.Set;
  * is removed from the metadata refresh set after an update. Consumers disable topic expiry since they explicitly
  * manage topics while producers rely on topic expiry to limit the refresh set.
  */
-//真正的元数据肯定是服务端在管理,Producer只是拿过去用
-//元数据没有持久化,只是放入内存而已
+//服务端集群每个broker节点的元数据缓存都是一致的，客户端只需要向任意一个节点发送元数据请求，就可以获取缓存的元数据，并更新客户端的元数据对象
 public final class Metadata {
 
     private static final Logger log = LoggerFactory.getLogger(Metadata.class);

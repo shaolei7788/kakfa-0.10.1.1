@@ -290,14 +290,14 @@ class ControllerBrokerRequestBatch(controller: KafkaController) extends  Logging
     updateMetadataRequestMap.clear()
   }
 
-  //
+  //添加LeaderAndIsrRequest请求
   def addLeaderAndIsrRequestForBrokers(brokerIds: Seq[Int], topic: String, partition: Int,
                                        leaderIsrAndControllerEpoch: LeaderIsrAndControllerEpoch,
                                        replicas: Seq[Int], callback: AbstractRequestResponse => Unit = null) {
     val topicPartition = new TopicPartition(topic, partition)
 
     brokerIds.filter(_ >= 0).foreach { brokerId =>
-      //getOrElseUpdate 有就获取 没有就创建
+      //getOrElseUpdate 有就获取 没有就创建  Map[TopicPartition, PartitionStateInfo]
       val result = leaderAndIsrRequestMap.getOrElseUpdate(brokerId, mutable.Map.empty)
       //添加leaderAndIsrRequest 请求
       result.put(topicPartition, PartitionStateInfo(leaderIsrAndControllerEpoch, replicas.toSet))
@@ -322,6 +322,7 @@ class ControllerBrokerRequestBatch(controller: KafkaController) extends  Logging
   }
 
   /** Send UpdateMetadataRequest to the given brokers for the given partitions and partitions that are being deleted */
+  //添加修改元数据请求
   def addUpdateMetadataRequestForBrokers(brokerIds: Seq[Int],
                                          partitions: collection.Set[TopicAndPartition] = Set.empty[TopicAndPartition],
                                          callback: AbstractRequestResponse => Unit = null) {
@@ -347,6 +348,7 @@ class ControllerBrokerRequestBatch(controller: KafkaController) extends  Logging
       }
     }
 
+    //过滤正在删除的分区
     val filteredPartitions = {
       //判断分区是否为空
       val givenPartitions = if (partitions.isEmpty) {

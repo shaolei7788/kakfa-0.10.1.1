@@ -23,8 +23,8 @@ import java.util.Properties
 
 import kafka.admin.{AdminUtils, RackAwareMode}
 import kafka.api._
-import kafka.cluster.Partition
-import kafka.server.QuotaFactory.{UnboundedQuota, QuotaManagers}
+import kafka.cluster.{Broker, Partition}
+import kafka.server.QuotaFactory.{QuotaManagers, UnboundedQuota}
 import kafka.common
 import kafka.common._
 import kafka.controller.KafkaController
@@ -34,12 +34,12 @@ import kafka.message.{ByteBufferMessageSet, Message, MessageSet}
 import kafka.network._
 import kafka.network.RequestChannel.{Response, Session}
 import kafka.security.auth
-import kafka.security.auth.{Authorizer, ClusterAction, Create, Describe, Group, Operation, Read, Resource, Write, Delete}
+import kafka.security.auth.{Authorizer, ClusterAction, Create, Delete, Describe, Group, Operation, Read, Resource, Write}
 import kafka.utils.{Logging, SystemTime, ZKGroupTopicDirs, ZkUtils}
-import org.apache.kafka.common.errors.{ClusterAuthorizationException, NotLeaderForPartitionException, UnknownTopicOrPartitionException, TopicExistsException, UnsupportedForMessageFormatException}
+import org.apache.kafka.common.errors.{ClusterAuthorizationException, NotLeaderForPartitionException, TopicExistsException, UnknownTopicOrPartitionException, UnsupportedForMessageFormatException}
 import org.apache.kafka.common.metrics.Metrics
 import org.apache.kafka.common.protocol.{ApiKeys, Errors, Protocol, SecurityProtocol}
-import org.apache.kafka.common.requests.{ApiVersionsResponse, DescribeGroupsRequest, DescribeGroupsResponse, GroupCoordinatorRequest, GroupCoordinatorResponse, HeartbeatRequest, HeartbeatResponse, JoinGroupRequest, JoinGroupResponse, LeaderAndIsrRequest, LeaderAndIsrResponse, LeaveGroupRequest, LeaveGroupResponse, ListGroupsResponse, ListOffsetRequest, ListOffsetResponse, MetadataRequest, MetadataResponse, OffsetCommitRequest, OffsetCommitResponse, OffsetFetchRequest, OffsetFetchResponse, ProduceRequest, ProduceResponse, ResponseHeader, ResponseSend, StopReplicaRequest, StopReplicaResponse, SyncGroupRequest, SyncGroupResponse, UpdateMetadataRequest, UpdateMetadataResponse, CreateTopicsRequest, CreateTopicsResponse, DeleteTopicsRequest, DeleteTopicsResponse}
+import org.apache.kafka.common.requests.{ApiVersionsResponse, CreateTopicsRequest, CreateTopicsResponse, DeleteTopicsRequest, DeleteTopicsResponse, DescribeGroupsRequest, DescribeGroupsResponse, GroupCoordinatorRequest, GroupCoordinatorResponse, HeartbeatRequest, HeartbeatResponse, JoinGroupRequest, JoinGroupResponse, LeaderAndIsrRequest, LeaderAndIsrResponse, LeaveGroupRequest, LeaveGroupResponse, ListGroupsResponse, ListOffsetRequest, ListOffsetResponse, MetadataRequest, MetadataResponse, OffsetCommitRequest, OffsetCommitResponse, OffsetFetchRequest, OffsetFetchResponse, ProduceRequest, ProduceResponse, ResponseHeader, ResponseSend, StopReplicaRequest, StopReplicaResponse, SyncGroupRequest, SyncGroupResponse, UpdateMetadataRequest, UpdateMetadataResponse}
 import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse
 import org.apache.kafka.common.utils.Utils
 import org.apache.kafka.common.{Node, TopicPartition}
@@ -75,6 +75,8 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
     try {
       trace("Handling request:%s from connection %s;securityProtocol:%s,principal:%s".
         format(request.requestDesc(true), request.connectionId, request.securityProtocol, request.session.principal))
+      //todo 控制器向broker节点发送的请求类型有三种 1 LEADER_AND_ISR 2 UPDATE_METADATA_KEY 3 STOP_REPLICA
+      // LEADER_AND_ISR 请求必须在 UPDATE_METADATA_KEY 之前完成
       ApiKeys.forId(request.requestId) match {
         //todo 生产者生产消息
         case ApiKeys.PRODUCE => handleProducerRequest(request)
@@ -84,9 +86,11 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
         case ApiKeys.LIST_OFFSETS => handleOffsetRequest(request)
         //todo 生产者获取集群元数据
         case ApiKeys.METADATA => handleTopicMetadataRequest(request)
-        //todo 请求控制副本的leader follower 切换
+        //todo 请求控制副本的leader follower 切换  控制器向broker节点发送
         case ApiKeys.LEADER_AND_ISR => handleLeaderAndIsrRequest(request)
+        //todo 停止副本  控制器向broker节点发送
         case ApiKeys.STOP_REPLICA => handleStopReplicaRequest(request)
+        //todo 更新集群元数据 由控制器给所有存活的broker发送UPDATE_METADATA_KEY请求
         case ApiKeys.UPDATE_METADATA_KEY => handleUpdateMetadataRequest(request)
         case ApiKeys.CONTROLLED_SHUTDOWN_KEY => handleControlledShutdownRequest(request)
         //todo 消费者提交偏移量  从Coodinator拉取
@@ -218,6 +222,7 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
 
     val updateMetadataResponse =
       if (authorize(request.session, ClusterAction, Resource.ClusterResource)) {
+        //可能更新元数据缓存信息
         replicaManager.maybeUpdateMetadataCache(correlationId, updateMetadataRequest, metadataCache)
         if (adminManager.hasDelayedTopicOperations) {
           updateMetadataRequest.partitionStates.keySet.asScala.map(_.topic).foreach { topic =>
@@ -362,6 +367,7 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
   }
 
   private def authorize(session: Session, operation: Operation, resource: Resource): Boolean =
+    // SimpleAclAuthorizer#authorize
     authorizer.map(_.authorize(session, operation, resource)).getOrElse(true)
 
   /**
@@ -868,28 +874,35 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
    */
   def handleTopicMetadataRequest(request: RequestChannel.Request) {
     val metadataRequest = request.body.asInstanceOf[MetadataRequest]
+    //requestVersion = 2
     val requestVersion = request.header.apiVersion()
 
     val topics =
       // Handle old metadata request logic. Version 0 has no way to specify "no topics".
       if (requestVersion == 0) {
+        //处理旧元数据请求逻辑
         if (metadataRequest.topics() == null || metadataRequest.topics().isEmpty)
           metadataCache.getAllTopics()
         else
           metadataRequest.topics.asScala.toSet
       } else {
-        if (metadataRequest.isAllTopics)
+        if (metadataRequest.isAllTopics) {
+          //获取所有的topic元数据信息
           metadataCache.getAllTopics()
-        else
+        } else {
+          //获取指定的topic元数据信息
           metadataRequest.topics.asScala.toSet
+        }
       }
 
+    //authorizedTopics 授权的topic  unauthorizedForDescribeTopics 没有授权的topic
     var (authorizedTopics, unauthorizedForDescribeTopics) =
       topics.partition(topic => authorize(request.session, Describe, new Resource(auth.Topic, topic)))
 
     var unauthorizedForCreateTopics = Set[String]()
 
     if (authorizedTopics.nonEmpty) {
+      //授权的topic非空
       val nonExistingTopics = metadataCache.getNonExistingTopics(authorizedTopics)
       if (config.autoCreateTopicsEnable && nonExistingTopics.nonEmpty) {
         if (!authorize(request.session, Create, Resource.ClusterResource)) {
@@ -908,28 +921,34 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
       // In case of all topics, don't include topics unauthorized for Describe
       if ((requestVersion == 0 && (metadataRequest.topics == null || metadataRequest.topics.isEmpty)) || metadataRequest.isAllTopics)
         Set.empty[MetadataResponse.TopicMetadata]
-      else
+      else {
+        //
         unauthorizedForDescribeTopics.map(topic =>
           new MetadataResponse.TopicMetadata(Errors.UNKNOWN_TOPIC_OR_PARTITION, topic, false, java.util.Collections.emptyList()))
+      }
 
     // In version 0, we returned an error when brokers with replicas were unavailable,
     // while in higher versions we simply don't include the broker in the returned broker list
     val errorUnavailableEndpoints = requestVersion == 0
-    val topicMetadata =
+    val topicMetadata: Seq[MetadataResponse.TopicMetadata] =
       if (authorizedTopics.isEmpty)
         Seq.empty[MetadataResponse.TopicMetadata]
-      else
+      else {
+        //获取topic元数据信息
         getTopicMetadata(authorizedTopics, request.securityProtocol, errorUnavailableEndpoints)
+      }
 
+    //已经完成的topic元数据
     val completeTopicMetadata = topicMetadata ++ unauthorizedForCreateTopicMetadata ++ unauthorizedForDescribeTopicMetadata
-
-    val brokers = metadataCache.getAliveBrokers
+    //存活的broker
+    val brokers: Seq[Broker] = metadataCache.getAliveBrokers
 
     trace("Sending topic metadata %s and brokers %s for correlation id %d to client %s".format(completeTopicMetadata.mkString(","),
       brokers.mkString(","), request.header.correlationId, request.header.clientId))
 
+    //创建响应头
     val responseHeader = new ResponseHeader(request.header.correlationId)
-
+    //创建响应体
     val responseBody = new MetadataResponse(
       brokers.map(_.getNode(request.securityProtocol)).asJava,
       clusterId,
