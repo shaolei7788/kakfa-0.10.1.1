@@ -304,12 +304,15 @@ class ByteBufferMessageSet(val buffer: ByteBuffer) extends MessageSet with Loggi
   /** Write the messages in this set to the given channel */
   def writeFullyTo(channel: GatheringByteChannel): Int = {
     // FileChannel implements GatheringByteChannel
+    //标记缓冲区
     buffer.mark()
+    //写入字节数
     var written = 0
     while (written < sizeInBytes) {
-      //将底层包含的消息内容的字节缓冲区写到文件通道
+      //将底层包含的消息内容的字节缓冲区写到文件通道,消息就持久化到日志分段对应的数据文件了
       written += channel.write(buffer)
     }
+    //重置缓存区
     buffer.reset()
     written
   }
@@ -576,7 +579,7 @@ class ByteBufferMessageSet(val buffer: ByteBuffer) extends MessageSet with Loggi
                                         messageSizeMaybeChanged = true)
   }
 
-  //更新每条消息的偏移量数据
+  //更新每条消息的偏移量数据 将相对偏移量改为绝对偏移量
   private def validateNonCompressedMessagesAndAssignOffsetInPlace(offsetCounter: LongRef,
                                                                   now: Long,
                                                                   compactedTopic: Boolean,
@@ -586,15 +589,15 @@ class ByteBufferMessageSet(val buffer: ByteBuffer) extends MessageSet with Loggi
     // 0        3             abc          8+4+3 =15   0
     // 1        5             bcdef        8+4+5 =17   15
     // 0        3             cdef         8+4+4 =16   15+17=32
+    //todo 消息集中的第一条消息的偏移量一定是从字节缓冲区的0开始的，每条消息的长度 = 8 + 4 +消息大小
     var messagePosition = 0
     var maxTimestamp = Message.NoTimestamp
     var offsetOfMaxTimestamp = -1L
     buffer.mark()
     while (messagePosition < sizeInBytes - MessageSet.LogOverhead) {
-      //定位每条消息的起始位置 刚进来就是0的位置
+      //定位每条消息的起始位置 刚进来就是0的位置  直接定位到指定的位置
       buffer.position(messagePosition)
-      //todo 修改偏移量 以最新的偏移量计数器为基础，每条消息都的偏移量都在此基数上加1
-      // 写入每条消息的绝对偏移量后，只会读取消息的大小
+      //todo 修改偏移量 以最新的偏移量计数器为基础，每条消息都的偏移量都在此基数上加1    putLong是修改操作不是添加操作
       buffer.putLong(offsetCounter.getAndIncrement())
       //消息的大小
       val messageSize = buffer.getInt()
@@ -614,7 +617,7 @@ class ByteBufferMessageSet(val buffer: ByteBuffer) extends MessageSet with Loggi
           offsetOfMaxTimestamp = offsetCounter.value - 1
         }
       }
-      //消息的起始位置    12 + 消息大小 表示一条完整的消息
+      //下一条消息的起始位置    12 + 消息大小 表示一条完整的消息
       messagePosition += MessageSet.LogOverhead + messageSize
     }
     //回到最开始标记的地方

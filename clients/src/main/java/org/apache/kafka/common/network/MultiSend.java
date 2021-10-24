@@ -44,6 +44,7 @@ public class MultiSend implements Send {
         this.dest = dest;
         this.sends = sends;
         this.sendsIterator = sends.iterator();
+        //todo 给current 赋值
         nextSendOrDone();
         for (Send send: sends)
             this.size += send.size();
@@ -78,6 +79,7 @@ public class MultiSend implements Send {
         int totalWrittenPerCall = 0;
         boolean sendComplete = false;
         do {
+            System.out.println("TopicDataSend>>"+current.getClass().getName());
             long written = current.writeTo(channel);
             totalWritten += written;
             totalWrittenPerCall += written;

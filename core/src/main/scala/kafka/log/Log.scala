@@ -113,10 +113,14 @@ class Log(val dir: File,//Log对应的磁盘文件 dir = /opt/module/logs/first-
   //todo 加载所有的日志分段 通常发生在broker节点重启时
   loadSegments()
 
-  /* Calculate the offset of the next message */
-  //主要用于产生分配给消息的offset,同时也是当前副本的LEO log end offset
-  // messageOffset 记录了Log中最后一个offset值
-  @volatile var nextOffsetMetadata = new LogOffsetMetadata(activeSegment.nextOffset(), activeSegment.baseOffset, activeSegment.size.toInt)
+  // 给消息分配offset,nextOffsetMetadata 下一个偏移量，专门针对写入操作
+  @volatile var nextOffsetMetadata = new LogOffsetMetadata(
+            //下一个偏移量
+            activeSegment.nextOffset(),
+            //activeSegment基准偏移量
+            activeSegment.baseOffset,
+            //activeSegment 大小
+            activeSegment.size.toInt)
 
   val topicAndPartition: TopicAndPartition = Log.parseTopicPartitionName(dir)
 
@@ -201,6 +205,7 @@ class Log(val dir: File,//Log对应的磁盘文件 dir = /opt/module/logs/first-
       } else if(filename.endsWith(LogFileSuffix)) {
         //日志文件
         // if its a log file, load the corresponding log segment
+        //todo 基准偏移量
         val start = filename.substring(0, filename.length - LogFileSuffix.length).toLong
         val indexFile = Log.indexFilename(dir, start)
         val timeIndexFile = Log.timeIndexFilename(dir, start)
@@ -348,6 +353,7 @@ class Log(val dir: File,//Log对应的磁盘文件 dir = /opt/module/logs/first-
   //todo 会将生产者发送过来请求解析成ByteBufferMessageSet  assignOffsets 是否需要给消息添加offset
   def append(messages: ByteBufferMessageSet, assignOffsets: Boolean = true): LogAppendInfo = {
     //todo 进行数据校验 LogAppendInfo 日志追加信息 代表这批消息的概要信息 但不包含消息内容
+    // 该对象的内容包括消息集第一条和最后一条消息的偏移量，消息集的总字节大小，偏移量是否单调递增
     val appendInfo: LogAppendInfo = analyzeAndValidateMessageSet(messages)
 
     // if we have any valid messages, append them to the log
@@ -371,7 +377,7 @@ class Log(val dir: File,//Log对应的磁盘文件 dir = /opt/module/logs/first-
           appendInfo.firstOffset = offset.value
           val now = time.milliseconds
           val validateAndOffsetAssignResult = try {
-            //todo 进行内部压缩消息做进一步验证，消息格式转换 并为message分配偏移量
+            //todo 基于起始偏移量，为有效消息集的每条消息重新分配绝对偏移量
             // offset的返回值是最后一条消息的偏移量再加1
             validMessages.validateMessagesAndAssignOffsets(offset,
                                                            now,
@@ -557,6 +563,7 @@ class Log(val dir: File,//Log对应的磁盘文件 dir = /opt/module/logs/first-
    * @return The fetch data information including fetch starting offset metadata and messages read.
    */
   //todo offset = 起始偏移量 adjustedFetchSize = 拉取的字节长度   maxOffsetOpt = 读取消息的上限即最大偏移量
+  // maxLength 默认是1m   maxOffset 备份副本拉取数据不会有这个值
   def read(startOffset: Long, maxLength: Int, maxOffset: Option[Long] = None, minOneMessage: Boolean = false): FetchDataInfo = {
     trace("Reading %d bytes from offset %d in log %s of length %d bytes".format(maxLength, startOffset, name, size))
     //将nextOffsetMetadata 保存成局部变量 记录了Log中最后一个offset值
@@ -589,8 +596,9 @@ class Log(val dir: File,//Log对应的磁盘文件 dir = /opt/module/logs/first-
           if (entry != segments.lastEntry) {
             // 写线程并发进行roll操作，变成了读取非activeSegment的情况
             entry.getValue.size
-          } else
+          } else {
             exposedPos
+          }
         } else {
           //读取的是非activeSegment的情况，直接可以读取到LogSegment的结尾
           entry.getValue.size
@@ -758,6 +766,7 @@ class Log(val dir: File,//Log对应的磁盘文件 dir = /opt/module/logs/first-
   /**
    * The offset metadata of the next message that will be appended to the log
    */
+  //读取时的结束偏移量，专门针对读取操作
   def logEndOffsetMetadata: LogOffsetMetadata = nextOffsetMetadata
 
   /**
@@ -842,7 +851,9 @@ class Log(val dir: File,//Log对应的磁盘文件 dir = /opt/module/logs/first-
       //新创建的segment
       val segment = new LogSegment(dir,
                                    startOffset = newOffset,
+                                   // 4 k
                                    indexIntervalBytes = config.indexInterval,
+                                   // 10 * 1024 * 1024 = 10m
                                    maxIndexSize = config.maxIndexSize,
                                    rollJitterMs = config.randomSegmentJitter,
                                    time = time,

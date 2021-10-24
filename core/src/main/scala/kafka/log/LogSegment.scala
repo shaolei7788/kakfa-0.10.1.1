@@ -119,7 +119,7 @@ class LogSegment(
       // append an entry to the index (if needed)
       // indexIntervalBytes = 4096 写了超过4096个字节的消息就更新一次索引
       if(bytesSinceLastIndexEntry > indexIntervalBytes) {
-        //todo 添加索引项
+        //todo 添加索引项 每个索引项只占8个字节
         index.append(firstOffset, physicalPosition)
         timeIndex.maybeAppend(maxTimestampSoFar, offsetOfMaxTimestamp)
         bytesSinceLastIndexEntry = 0
@@ -142,11 +142,12 @@ class LogSegment(
     *        message or null if no message meets this criteria.
    */
   // startingFilePosition 起始偏移量对应的物理位置 从那个物理地址开始找
+  // 将offset转换成它在数据文件中的起始物理位置
   @threadsafe
   private[log] def translateOffset(offset: Long, startingFilePosition: Int = 0): (OffsetPosition, Int) = {
     //todo OffsetIndex#lookup  通过二分查找 得到索引项
     val mapping:OffsetPosition = index.lookup(offset)
-    //todo 查找日志文件获取物理地址 FileMessageSet#searchForOffsetWithSize
+    //todo 查找日志文件获取物理地址(准确对应到起始偏移量) FileMessageSet#searchForOffsetWithSize
     log.searchForOffsetWithSize(offset, max(mapping.position, startingFilePosition))
   }
 
@@ -181,7 +182,7 @@ class LogSegment(
     if (startOffsetAndSize == null)
       return null
 
-    //
+    // messageSetSize 该消息的大小
     val (startPosition, messageSetSize) = startOffsetAndSize
     val offsetMetadata = new LogOffsetMetadata(startOffset, this.baseOffset, startPosition.position)
 
@@ -221,9 +222,9 @@ class LogSegment(
           }
         min(min(maxPosition, endPosition) - startPosition.position, adjustedMaxSize).toInt
     }
-    //todo FetchDataInfo是样例类  Log.read 按照读取起始位置和长度生成一个分区的FileMessageSet对象，并没有真正的读取数据到内存
-    FetchDataInfo(offsetMetadata, log.read(startPosition.position, length),
-      firstMessageSetIncomplete = adjustedMaxSize < messageSetSize)
+    //todo FetchDataInfo是样例类   Log.read 读取日志文件得到的文件消息集视图
+    // Log.read 按照读取起始位置和长度生成一个分区的FileMessageSet对象，并没有真正的读取数据到内存
+    FetchDataInfo(offsetMetadata, log.read(startPosition.position, length), firstMessageSetIncomplete = adjustedMaxSize < messageSetSize)
   }
 
   /**

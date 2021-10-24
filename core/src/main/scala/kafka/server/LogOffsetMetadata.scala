@@ -41,7 +41,7 @@ object LogOffsetMetadata {
 case class LogOffsetMetadata(messageOffset: Long,//消息的偏移量
                              //日志分段的基准偏移量 记录了activeSegment的baseoffset
                              segmentBaseOffset: Long = LogOffsetMetadata.UnknownSegBaseOffset,
-                             //消息在日志分段中的物理位置
+                             //消息在日志分段中的相对位置 或 消息大小
                              relativePositionInSegment: Int = LogOffsetMetadata.UnknownFilePosition) {
 
   // check if this offset is already on an older segment compared with the given offset

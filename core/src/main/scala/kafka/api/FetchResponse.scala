@@ -59,23 +59,34 @@ class PartitionDataSend(val partitionId: Int,
   private val messageSize = partitionData.messages.sizeInBytes
   private var messagesSentSize = 0
   private var pending = false
+  //缓冲区标识分区数据的头部，并不包含消息集的内容
   private val buffer = ByteBuffer.allocate( 4 /** partitionId **/ + FetchResponsePartitionData.headerSize)
+  //分区编号
   buffer.putInt(partitionId)
+  //错误码
   buffer.putShort(partitionData.error)
+  //最高水位
   buffer.putLong(partitionData.hw)
+  //消息集大小
   buffer.putInt(partitionData.messages.sizeInBytes)
-  buffer.rewind()
+  buffer.rewind()//回到缓冲区的初始位置
 
   override def completed = !buffer.hasRemaining && messagesSentSize >= messageSize && !pending
 
   override def destination: String = ""
 
+  //channel = PlaintextTransportLayer
   override def writeTo(channel: GatheringByteChannel): Long = {
     var written = 0L
-    if (buffer.hasRemaining)
+    if (buffer.hasRemaining) {
+      //上面rewind后，缓冲区定位到初始位置，即还有剩余空间，开始写到通道
+      //分区头部直接写到网络通道
       written += channel.write(buffer)
+    }
+    //头部写完后，才会开始发送消息集的内容
     if (!buffer.hasRemaining) {
       if (messagesSentSize < messageSize) {
+        //todo partitionData.messages = FileMessageSet  这里面采用了零拷贝的方式 transferTo
         val bytesSent = partitionData.messages.writeTo(channel, messagesSentSize, messageSize - messagesSentSize)
         messagesSentSize += bytesSent
         written += bytesSent
@@ -137,8 +148,8 @@ class TopicDataSend(val dest: String, val topicData: TopicData) extends Send {
   buffer.putInt(topicData.partitionData.size)
   buffer.rewind()
 
-  private val sends = new MultiSend(dest,
-                            JavaConversions.seqAsJavaList(topicData.partitionData.toList.map(d => new PartitionDataSend(d._1, d._2))))
+  //todo
+  private val sends = new MultiSend(dest, JavaConversions.seqAsJavaList(topicData.partitionData.toList.map(d => new PartitionDataSend(d._1, d._2))))
 
   override def writeTo(channel: GatheringByteChannel): Long = {
     if (completed)
@@ -148,8 +159,10 @@ class TopicDataSend(val dest: String, val topicData: TopicData) extends Send {
     if (buffer.hasRemaining)
       written += channel.write(buffer)
     if (!buffer.hasRemaining) {
-      if (!sends.completed)
+      if (!sends.completed) {
+        print("TopicDataSend>>"+sends.getClass.getName)
         written += sends.writeTo(channel)
+      }
       if (sends.completed && hasPendingWrites(channel))
         written += channel.write(emptyBuffer)
     }
@@ -282,6 +295,7 @@ class FetchResponseSend(val dest: String, val fetchResponse: FetchResponse) exte
   fetchResponse.writeHeaderTo(buffer)
   buffer.rewind()
 
+  //todo TopicDataSend
   private val sends = new MultiSend(dest, fetchResponse.dataGroupedByTopic.map {
     case (topic, data) => new TopicDataSend(dest, TopicData(topic, data)): Send
   }.asJava)
@@ -292,8 +306,9 @@ class FetchResponseSend(val dest: String, val fetchResponse: FetchResponse) exte
 
     var written = 0L
 
-    if (buffer.hasRemaining)
+    if (buffer.hasRemaining) {
       written += channel.write(buffer)
+    }
     if (!buffer.hasRemaining) {
       if (!sends.completed)
         written += sends.writeTo(channel)

@@ -170,7 +170,7 @@ public class KafkaChannel {
     }
 
     private boolean send(Send send) throws IOException {
-        //最终执行发送请求的代码就在这里
+        //最终执行发送请求的代码就在这里  transportLayer = PlaintextTransportLayer
         send.writeTo(transportLayer);
         if (send.completed()) {
             //todo send请求全部写出去，移除OP_WRITE

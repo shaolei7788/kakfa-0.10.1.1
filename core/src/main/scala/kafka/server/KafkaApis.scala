@@ -535,7 +535,9 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
 
             tp -> convertedData
           }
-        } else responsePartitionData
+        } else {
+          responsePartitionData
+        }
 
       //合并 分区数据
       val mergedPartitionData = convertedPartitionData ++ unauthorizedForReadPartitionData ++ nonExistingOrUnauthorizedForDescribePartitionData
@@ -553,6 +555,7 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
         trace(s"Sending fetch response to client ${fetchRequest.clientId} of " +
           s"${convertedPartitionData.map { case (_, v) => v.messages.sizeInBytes }.sum} bytes")
         val response = FetchResponse(fetchRequest.correlationId, mergedPartitionData.toSeq, fetchRequest.versionId, delayTimeMs)
+        //todo 创建拉取响应对象
         requestChannel.sendResponse(new RequestChannel.Response(request, new FetchResponseSend(request.connectionId, response)))
       }
 

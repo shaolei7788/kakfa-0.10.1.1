@@ -43,6 +43,7 @@ import scala.collection.mutable.ArrayBuffer
  * @param isSlice Should the start and end parameters be used for slicing?
  */
 //对应磁盘上一个真正的日志文件
+//todo 存储到日志文件中的消息必须是分区级别的绝对偏移量
 @nonthreadsafe
 class FileMessageSet private[kafka](@volatile var file: File,//指向磁盘上对应的日志文件
                                     private[log] val channel: FileChannel,//用于读写对应的日志文件
@@ -51,6 +52,7 @@ class FileMessageSet private[kafka](@volatile var file: File,//指向磁盘上�
                                     isSlice: Boolean) extends MessageSet with Logging {
 
   /* the size of the message set in bytes */
+  //文件大小
   private val _size =
     if(isSlice)
       new AtomicInteger(end - start) // don't check the file size if this is just a slice view
@@ -102,6 +104,48 @@ class FileMessageSet private[kafka](@volatile var file: File,//指向磁盘上�
     this(file, channel, start, end, isSlice = true)
 
   /**
+   * Search forward for the file position of the last offset that is greater than or equal to the target offset
+   * and return its physical position and the size of the message (including log overhead) at the returned offset. If
+   * no such offsets are found, return null.
+   * @param targetOffset The offset to search for.
+   * @param startingPosition The starting position in the file to begin searching from.
+   */
+  //todo 从指定的 startingPosition 开始逐条遍历FileMessageSet中的消息，并将每个消费的offset与targetOffset进行比较
+  // 直到offset大于等于targetOffset,最后返回查找到的offset
+  def searchForOffsetWithSize(targetOffset: Long, startingPosition: Int): (OffsetPosition, Int) = {
+    //起始位置
+    var position = startingPosition
+    //用于读取LogOverhead 即 offset + size = 12  buffer = HeapByteBuffer
+    val buffer = ByteBuffer.allocate(MessageSet.LogOverhead)
+    //当前FileMessageSet大小，单位字节
+    val size = sizeInBytes()
+    while(position + MessageSet.LogOverhead < size) {
+      //rewind会将指针移到缓冲区的开始位置，准备写入数据
+      buffer.rewind()
+      //从文件通道读取数据到缓冲区，缓冲区被填满后，缓冲区的指针到了末尾
+      channel.read(buffer, position)
+      if(buffer.hasRemaining)
+        throw new IllegalStateException("Failed to read complete buffer for targetOffset %d startPosition %d in %s"
+          .format(targetOffset, startingPosition, file.getAbsolutePath))
+      //rewind会将指针移到缓冲区的开始位置，准备读取数据
+      buffer.rewind()
+      //绝对偏移量
+      val offset = buffer.getLong()
+      //消息大小
+      val messageSize = buffer.getInt()
+      if (messageSize < Message.MinMessageOverhead)
+        throw new IllegalStateException("Invalid message size: " + messageSize)
+      if (offset >= targetOffset) {
+        //返回符合的
+        return (OffsetPosition(offset, position), messageSize + MessageSet.LogOverhead)
+      }
+      //移动position 准备读取下一个消息  这样不用读取消息内容
+      position += MessageSet.LogOverhead + messageSize
+    }
+    null
+  }
+
+  /**
    * Return a message set which is a view into this set starting from the given position and with the given size limit.
    *
    * If the size is beyond the end of the file, the end will be based on the size of the file at the time of the read.
@@ -113,6 +157,8 @@ class FileMessageSet private[kafka](@volatile var file: File,//指向磁盘上�
    *
    * @return A sliced wrapper on this message set limited based on the given position and size
    */
+  //读取文件消息集，给定起始位置和读取大小，创建一个新的文件消息集视图
+  // 它的大小等于结束位置-开始位置，因为是一个视图，所以一旦创建后，文件消息集就固定下来了
   def read(position: Int, size: Int): FileMessageSet = {
     if(position < 0)
       throw new IllegalArgumentException("Invalid position: " + position)
@@ -128,45 +174,6 @@ class FileMessageSet private[kafka](@volatile var file: File,//指向磁盘上�
                          else
                            math.min(this.start + position + size, sizeInBytes())
                        })
-  }
-
-  /**
-   * Search forward for the file position of the last offset that is greater than or equal to the target offset
-   * and return its physical position and the size of the message (including log overhead) at the returned offset. If
-   * no such offsets are found, return null.
-   * @param targetOffset The offset to search for.
-   * @param startingPosition The starting position in the file to begin searching from.
-   */
-  //todo 从指定的 startingPosition 开始逐条遍历FileMessageSet中的消息，并将每个消费的offset与targetOffset进行比较
-  // 直到offset大于等于targetOffset,最后返回查找到的offset
-  def searchForOffsetWithSize(targetOffset: Long, startingPosition: Int): (OffsetPosition, Int) = {
-    //起始位置
-    var position = startingPosition
-    //用于读取LogOverhead 即 offset + size = 12
-    val buffer = ByteBuffer.allocate(MessageSet.LogOverhead)
-    //当前FileMessageSet大小，单位字节
-    val size = sizeInBytes()
-    while(position + MessageSet.LogOverhead < size) {
-      //重置buffer的指针，准备从ByteBuffer读入数据
-      buffer.rewind()
-      channel.read(buffer, position)
-      if(buffer.hasRemaining)
-        throw new IllegalStateException("Failed to read complete buffer for targetOffset %d startPosition %d in %s"
-          .format(targetOffset, startingPosition, file.getAbsolutePath))
-      //重置buffer的指针，准备读入数据
-      buffer.rewind()
-      val offset = buffer.getLong()
-      val messageSize = buffer.getInt()
-      if (messageSize < Message.MinMessageOverhead)
-        throw new IllegalStateException("Invalid message size: " + messageSize)
-      if (offset >= targetOffset) {
-        //返回符合的
-        return (OffsetPosition(offset, position), messageSize + MessageSet.LogOverhead)
-      }
-      //移动position 准备读取下一个消息
-      position += MessageSet.LogOverhead + messageSize
-    }
-    null
   }
 
   /**
@@ -225,6 +232,7 @@ class FileMessageSet private[kafka](@volatile var file: File,//指向磁盘上�
    * @param size The maximum number of bytes to write
    * @return The number of bytes actually written.
    */
+  //将文件消息集的数据传输到目标通道中，通常用于文件读取
   def writeTo(destChannel: GatheringByteChannel, writePosition: Long, size: Int): Int = {
     // Ensure that the underlying size has not changed.
     val newSize = math.min(channel.size.toInt, end) - start
@@ -235,7 +243,9 @@ class FileMessageSet private[kafka](@volatile var file: File,//指向磁盘上�
     val position = start + writePosition
     val count = math.min(size, sizeInBytes)
     val bytesTransferred = (destChannel match {
+      //todo 会走这里 transferFrom 也是调用 transferTo方法 将当前文件通道的字节直接传输到网络通道  文件通道的零拷贝传输
       case tl: TransportLayer => tl.transferFrom(channel, position, count)
+      //todo 将当前文件通道的字节直接传输到可写通道     文件通道的零拷贝传输
       case dc => channel.transferTo(position, count, dc)
     }).toInt
     trace("FileMessageSet " + file.getAbsolutePath + " : bytes transferred : " + bytesTransferred

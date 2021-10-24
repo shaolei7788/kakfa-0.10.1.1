@@ -605,7 +605,7 @@ class ReplicaManager(val config: KafkaConfig,
 
         // 获取leader副本 判断是否只拉取leader副本
         val localReplica = if (fetchOnlyFromLeader) {
-          //一般都是从leader拉取数据
+          //todo 一般都是从leader拉取数据
           getLeaderReplicaIfLocal(topic, partition)
         } else {
           getReplicaOrException(topic, partition)
@@ -633,7 +633,7 @@ class ReplicaManager(val config: KafkaConfig,
             //todo Log#read  offset = 起始偏移量  adjustedFetchSize = 拉取的字节长度   maxOffsetOpt = 读取消息的上限
             val fetch: FetchDataInfo = log.read(offset, adjustedFetchSize, maxOffsetOpt, minOneMessage)
 
-            // If the partition is being throttled, simply return an empty set.  Throttle 掐死 勒死
+            // If the partition is being throttled, simply return an empty set.  Throttle 掐死 勒死的意思
             if (shouldLeaderThrottle(quota, tp, replicaId))
               FetchDataInfo(fetch.fetchOffsetMetadata, MessageSet.Empty)
             // For FetchRequest version 3, we replace incomplete message sets with an empty one as consumers can make
@@ -667,6 +667,7 @@ class ReplicaManager(val config: KafkaConfig,
       }
     }
 
+    //剩余拉取的字节数
     var limitBytes = fetchMaxBytes
     val result = new mutable.ArrayBuffer[(TopicAndPartition, LogReadResult)]
     var minOneMessage = !hardMaxBytesLimit
@@ -674,6 +675,7 @@ class ReplicaManager(val config: KafkaConfig,
     readPartitionInfo.foreach { case (tp, fetchInfo) =>
       //todo 读取数据
       val readResult : LogReadResult = read(tp, fetchInfo, limitBytes, minOneMessage)
+      // readResult.info.messageSet = FileMessageSet  messageSetSize 文件大小
       val messageSetSize = readResult.info.messageSet.sizeInBytes
       // Once we read from a non-empty partition, we stop ignoring request and partition level size limits
       if (messageSetSize > 0)
