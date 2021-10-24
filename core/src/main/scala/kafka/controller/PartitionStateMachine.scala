@@ -489,6 +489,7 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
   //todo 删除主题监听器 监听 /admin/delete_topics 子节点的改变
   class DeleteTopicsListener() extends IZkChildListener with Logging {
     this.logIdent = "[DeleteTopicsListener on " + controller.config.brokerId + "]: "
+
     val zkUtils = controllerContext.zkUtils
 
     /**
