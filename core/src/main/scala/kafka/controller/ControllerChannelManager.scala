@@ -37,6 +37,7 @@ import scala.collection.JavaConverters._
 import scala.collection.{Set, mutable}
 import scala.collection.mutable.HashMap
 
+//控制器的网络通道管理
 class ControllerChannelManager(controllerContext: ControllerContext, config: KafkaConfig, time: Time, metrics: Metrics, threadNamePrefix: Option[String] = None) extends Logging {
   //todo 核心  key=brokerid  ControllerBrokerStateInfo 表示与一个broker连接的各种信息
   protected val brokerStateInfo = new HashMap[Int, ControllerBrokerStateInfo]
@@ -71,10 +72,12 @@ class ControllerChannelManager(controllerContext: ControllerContext, config: Kaf
     }
   }
 
+  //添加broker
   def addBroker(broker: Broker) {
     // be careful here. Maybe the startup() API has already started the request send thread
     brokerLock synchronized {
       if(!brokerStateInfo.contains(broker.id)) {
+        //若brokerStateInfo 不包含brokerid，则加入
         addNewBroker(broker)
         startRequestSendThread(broker.id)
       }
@@ -88,7 +91,7 @@ class ControllerChannelManager(controllerContext: ControllerContext, config: Kaf
     }
   }
 
-
+  //添加新的broker
   private def addNewBroker(broker: Broker) {
     val messageQueue = new LinkedBlockingQueue[QueueItem]
     debug("Controller %d trying to connect to broker %d".format(config.brokerId, broker.id))
@@ -140,10 +143,14 @@ class ControllerChannelManager(controllerContext: ControllerContext, config: Kaf
     brokerStateInfo.put(broker.id, new ControllerBrokerStateInfo(networkClient, brokerNode, messageQueue, requestThread))
   }
 
+  //移除旧的broker
   private def removeExistingBroker(brokerState: ControllerBrokerStateInfo) {
     try {
+      //关闭网络连接
       brokerState.networkClient.close()
+      //请求消息队列
       brokerState.messageQueue.clear()
+      //停掉线程
       brokerState.requestSendThread.shutdown()
       brokerStateInfo.remove(brokerState.brokerNode.id)
     } catch {
@@ -259,18 +266,22 @@ class RequestSendThread(val controllerId: Int,
 
 }
 
-//向broker批量发送请求
+//todo 向broker批量发送请求  控制器发送给broker的请求有三种
+// 1 leaderAndIsr
+// 2 stopReplica
+// 3 updateMetadata
 class ControllerBrokerRequestBatch(controller: KafkaController) extends  Logging {
   val controllerContext = controller.controllerContext
   val controllerId: Int = controller.config.brokerId
-  //记录了发往指定brokerd  LeaderIsrAndControllerEpoch 请求
+  //记录了发往指定brokerd  LeaderIsrAndControllerEpoch 请求  key = brokerid  即往一个broker节点会发送多个分区状态信息
   val leaderAndIsrRequestMap = mutable.Map.empty[Int, mutable.Map[TopicPartition, PartitionStateInfo]]
-  //记录了发往指定brokerd  ApiKeys.STOP_REPLICA 请求
+  //记录了发往指定brokerd  ApiKeys.STOP_REPLICA 请求  key = brokerid  即往一个broker节点会发送多个停止副本请求
   val stopReplicaRequestMap = mutable.Map.empty[Int, Seq[StopReplicaRequestInfo]]
-  //记录了发往指定brokerd  ApiKeys.UPDATE_METADATA_KEY 请求
+  //记录了发往指定brokerd  ApiKeys.UPDATE_METADATA_KEY 请求  key = brokerid  即往一个broker节点会发送多个更新元数据请求
   val updateMetadataRequestMap = mutable.Map.empty[Int, mutable.Map[TopicPartition, PartitionStateInfo]]
   private val stateChangeLogger = KafkaController.stateChangeLogger
 
+  //创建新的批请求，必须确保前一批的请求全部发送完毕
   def newBatch() {
     // raise error if the previous batch is not empty
     if (leaderAndIsrRequestMap.nonEmpty)
@@ -290,7 +301,7 @@ class ControllerBrokerRequestBatch(controller: KafkaController) extends  Logging
     updateMetadataRequestMap.clear()
   }
 
-  //添加LeaderAndIsrRequest请求
+  //为目标broker添加LeaderAndIsrRequest请求
   def addLeaderAndIsrRequestForBrokers(brokerIds: Seq[Int], topic: String, partition: Int,
                                        leaderIsrAndControllerEpoch: LeaderIsrAndControllerEpoch,
                                        replicas: Seq[Int], callback: AbstractRequestResponse => Unit = null) {
@@ -302,11 +313,12 @@ class ControllerBrokerRequestBatch(controller: KafkaController) extends  Logging
       //添加leaderAndIsrRequest 请求
       result.put(topicPartition, PartitionStateInfo(leaderIsrAndControllerEpoch, replicas.toSet))
     }
-    //添加UpdateMetadataRequest给broker
+    //更新了分区的信息，也需要更新主题的元数据，主题的元数据信息包含每个分区的信息，添加UpdateMetadataRequest给broker
     addUpdateMetadataRequestForBrokers(controllerContext.liveOrShuttingDownBrokerIds.toSeq,
                                        Set(TopicAndPartition(topic, partition)))
   }
 
+  //为目标broker添加StopReplica请求
   def addStopReplicaRequestForBrokers(brokerIds: Seq[Int], topic: String, partition: Int, deletePartition: Boolean,
                                       callback: (AbstractRequestResponse, Int) => Unit = null) {
     brokerIds.filter(b => b >= 0).foreach { brokerId =>
@@ -322,7 +334,7 @@ class ControllerBrokerRequestBatch(controller: KafkaController) extends  Logging
   }
 
   /** Send UpdateMetadataRequest to the given brokers for the given partitions and partitions that are being deleted */
-  //添加修改元数据请求
+  //为目标broker添加UpdateMetadata请求
   def addUpdateMetadataRequestForBrokers(brokerIds: Seq[Int],
                                          partitions: collection.Set[TopicAndPartition] = Set.empty[TopicAndPartition],
                                          callback: AbstractRequestResponse => Unit = null) {
@@ -426,7 +438,6 @@ class ControllerBrokerRequestBatch(controller: KafkaController) extends  Logging
           )
           topicPartition -> partitionState
         }
-
         val version = if (controller.config.interBrokerProtocolVersion >= KAFKA_0_10_0_IV1) 2: Short
                       else if (controller.config.interBrokerProtocolVersion >= KAFKA_0_9_0) 1: Short
                       else 0: Short

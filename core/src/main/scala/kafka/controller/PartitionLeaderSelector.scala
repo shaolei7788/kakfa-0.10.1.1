@@ -115,11 +115,14 @@ class ReassignedPartitionLeaderSelector(controllerContext: ControllerContext) ex
    * The reassigned replicas are already in the ISR when selectLeader is called.
    */
   def selectLeader(topicAndPartition: TopicAndPartition, currentLeaderAndIsr: LeaderAndIsr): (LeaderAndIsr, Seq[Int]) = {
+    //重新分配的RAR，从RAR中选举主副本
     val reassignedInSyncReplicas = controllerContext.partitionsBeingReassigned(topicAndPartition).newReplicas
     val currentLeaderEpoch = currentLeaderAndIsr.leaderEpoch
     val currentLeaderIsrZkPathVersion = currentLeaderAndIsr.zkVersion
+    //重新分配的副本是活的并且在ISR中
     val aliveReassignedInSyncReplicas = reassignedInSyncReplicas.filter(r => controllerContext.liveBrokerIds.contains(r) &&
                                                                              currentLeaderAndIsr.isr.contains(r))
+    //选举第一个副本作为主副本
     val newLeaderOpt = aliveReassignedInSyncReplicas.headOption
     newLeaderOpt match {
       case Some(newLeader) => (new LeaderAndIsr(newLeader, currentLeaderEpoch + 1, currentLeaderAndIsr.isr,

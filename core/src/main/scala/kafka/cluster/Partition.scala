@@ -202,14 +202,14 @@ class Partition(val topic: String,
       controllerEpoch = partitionStateInfo.controllerEpoch
       // 创建AR集合中所有副本对应的replica对象
       allReplicas.foreach(replica => getOrCreateReplica(replica))
-      //todo 获取ISR集合  主副本才有ISR信息
+      //todo 分区状态信息包含主副本，ISR,AR
       val newInSyncReplicas = partitionStateInfo.isr.asScala.map(r => getOrCreateReplica(r)).toSet
-      // 移除不在allReplicas里的副本
+      // 移除不在AR里的副本
       (assignedReplicas().map(_.brokerId) -- allReplicas).foreach(removeReplica(_))
       inSyncReplicas = newInSyncReplicas
       leaderEpoch = partitionStateInfo.leaderEpoch
       zkVersion = partitionStateInfo.zkVersion
-      val isNewLeader =
+      val isNewLeader: Boolean =
         //检测leader 是否发生变化
         if (leaderReplicaIdOpt.isDefined && leaderReplicaIdOpt.get == localBrokerId) {
           //leader未变化
@@ -232,8 +232,10 @@ class Partition(val topic: String,
       (maybeIncrementLeaderHW(leaderReplica), isNewLeader)
     }
     // leader 副本的HW增加了，则可能有DelayedFetch满足执行条件
-    if (leaderHWIncremented)
+    if (leaderHWIncremented) {
+      //尝试完成延迟的请求
       tryCompleteDelayedRequests()
+    }
     isNewLeader
   }
 
@@ -313,7 +315,7 @@ class Partition(val topic: String,
           // 3 follower副本追上leader副本 HW
           if(!inSyncReplicas.contains(replica) &&
              assignedReplicas.map(_.brokerId).contains(replicaId) &&
-                  replica.logEndOffset.offsetDiff(leaderHW) >= 0) {
+             replica.logEndOffset.offsetDiff(leaderHW) >= 0) {
             //将该follower 添加到 ISR
             val newInSyncReplicas = inSyncReplicas + replica
             info("Expanding ISR for partition [%s,%d] from %s to %s"
@@ -516,9 +518,9 @@ class Partition(val topic: String,
 
   private def updateIsr(newIsr: Set[Replica]) {
     val newLeaderAndIsr = new LeaderAndIsr(localBrokerId, leaderEpoch, newIsr.map(r => r.brokerId).toList, zkVersion)
+    //更新ISR节点信息
     val (updateSucceeded,newVersion) = ReplicationUtils.updateLeaderAndIsr(zkUtils, topic, partitionId,
       newLeaderAndIsr, controllerEpoch, zkVersion)
-
     if(updateSucceeded) {
       replicaManager.recordIsrChange(new TopicAndPartition(topic, partitionId))
       inSyncReplicas = newIsr

@@ -176,7 +176,7 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
           val result = leaderAndIsrRequest.partitionStates.asScala.keys.map((_, new JShort(Errors.CLUSTER_AUTHORIZATION_FAILED.code))).toMap
           new LeaderAndIsrResponse(Errors.CLUSTER_AUTHORIZATION_FAILED.code, result.asJava)
         }
-
+      //发送LeaderAndIsr响应
       requestChannel.sendResponse(new Response(request, new ResponseSend(request.connectionId, responseHeader, leaderAndIsrResponse)))
     } catch {
       case e: KafkaStorageException =>

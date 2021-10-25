@@ -749,6 +749,7 @@ class ReplicaManager(val config: KafkaConfig,
         leaderAndISRRequest.partitionStates.asScala.foreach { case (topicPartition, stateInfo) =>
           //todo 获取或创建分区，如果分区已经存在直接返回，否则创建一个新分区
           val partition : Partition = getOrCreatePartition(topicPartition.topic, topicPartition.partition)
+          //本地的partitionLeaderEpoch
           val partitionLeaderEpoch = partition.getLeaderEpoch()
           //检测leaderEpoch
           if (partitionLeaderEpoch < stateInfo.leaderEpoch) {
@@ -787,10 +788,9 @@ class ReplicaManager(val config: KafkaConfig,
         val partitionsBecomeFollower = if (partitionsToBeFollower.nonEmpty){
           //todo 为多个分区创建follower副本
           makeFollowers(controllerId, controllerEpoch, partitionsToBeFollower, correlationId, responseMap, metadataCache)
-        }
-        else
+        } else{
           Set.empty[Partition]
-
+        }
         // we initialize highwatermark thread after the first leaderisrrequest. This ensures that all the partitions
         // have been completely populated before starting the checkpointing there by avoiding weird race conditions
         if (!hwThreadInitialized) {
@@ -838,7 +838,7 @@ class ReplicaManager(val config: KafkaConfig,
 
     val partitionsToMakeLeaders: mutable.Set[Partition] = mutable.Set()
     try {
-      //todo 转为主副本时，不再需要拉取数据，拉取管理器移除该分区
+      //todo 转为主副本时，不再需要拉取数据，从拉取管理器移除该分区
       replicaFetcherManager.removeFetcherForPartitions(partitionState.keySet.map(p => new TopicPartition(p.topic, p.partitionId)))
       // Update the partition information to be the leader
       //遍历要创建主副本的分区
