@@ -224,6 +224,7 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
       if (authorize(request.session, ClusterAction, Resource.ClusterResource)) {
         //可能更新元数据缓存信息
         replicaManager.maybeUpdateMetadataCache(correlationId, updateMetadataRequest, metadataCache)
+        //有延迟topic的操作
         if (adminManager.hasDelayedTopicOperations) {
           updateMetadataRequest.partitionStates.keySet.asScala.map(_.topic).foreach { topic =>
             adminManager.tryCompleteDelayedTopicOperations(topic)
@@ -233,7 +234,7 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
       } else {
         new UpdateMetadataResponse(Errors.CLUSTER_AUTHORIZATION_FAILED.code)
       }
-
+    //创建响应头
     val responseHeader = new ResponseHeader(correlationId)
     requestChannel.sendResponse(new Response(request, new ResponseSend(request.connectionId, responseHeader, updateMetadataResponse)))
   }
@@ -368,6 +369,7 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
 
   private def authorize(session: Session, operation: Operation, resource: Resource): Boolean =
     // SimpleAclAuthorizer#authorize
+    // authorizer = None  空实现
     authorizer.map(_.authorize(session, operation, resource)).getOrElse(true)
 
   /**
@@ -486,18 +488,11 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
     }
   }
 
-
-
-
   // 备份副本同步数据时，除了更新备份副本的偏移量，也会更新备份副本的最高水位，也可能更新主副本的HW
   // 生产者往主副本写数据，主副本的LEO增加，初始时所有副本的HW都为0
   // 备份副本拉取数据，更新本地的LEO，拉取响应带有主副本的HW,但主副本的HW还是0，备份副本的HW也是0
   // 备份副本再次拉取数据，主副本会根据备份副本发送过来的LEO,选择最小的的一个LEO 更新HW的值,此时主副本会将该HW返回给备份副本
   // 备份副本拉取到数据，会更新本地的LEO和HW
-
-  /**
-   * Handle a fetch request
-   */
   def handleFetchRequest(request: RequestChannel.Request) {
     val fetchRequest = request.requestObj.asInstanceOf[FetchRequest]
 
@@ -524,7 +519,6 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
         // Need to down-convert message when consumer only takes magic value 0.
         if (fetchRequest.versionId <= 1) {
           responsePartitionData.map { case (tp, data) =>
-
             // We only do down-conversion when:
             // 1. The message format version configured for the topic is using magic value > 0, and
             // 2. The message set contains message whose magic > 0
@@ -590,7 +584,7 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
         fetchRequest.replicaId,//备份副本编号，消费者没有该编号
         fetchRequest.minBytes,//拉取请求设置的最小拉取字节
         fetchRequest.maxBytes,//拉取请求设置的最大拉取字节
-        fetchRequest.versionId <= 2,
+        fetchRequest.versionId <= 2,//fetchRequest.versionId = 3
         authorizedRequestInfo,
         replicationQuota(fetchRequest),
         sendResponseCallback)

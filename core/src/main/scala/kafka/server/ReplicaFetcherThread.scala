@@ -66,6 +66,7 @@ class ReplicaFetcherThread(name: String,
   private val maxWait = brokerConfig.replicaFetchWaitMaxMs
   private val minBytes = brokerConfig.replicaFetchMinBytes
   private val maxBytes = brokerConfig.replicaFetchResponseMaxBytes
+  //副本拉取最大字节数 1024 * 1024 = 1m
   private val fetchSize = brokerConfig.replicaFetchMaxBytes
 
   private def clientId = name
@@ -118,29 +119,37 @@ class ReplicaFetcherThread(name: String,
       val topic = topicPartition.topic
       val partitionId = topicPartition.partition
       val replica = replicaMgr.getReplica(topic, partitionId).get
+      //消息集合
       val messageSet = partitionData.toByteBufferMessageSet
 
       maybeWarnIfMessageOversized(messageSet, topicPartition)
 
       if (fetchOffset != replica.logEndOffset.messageOffset)
         throw new RuntimeException("Offset mismatch for partition %s: fetched offset = %d, log end offset = %d.".format(topicPartition, fetchOffset, replica.logEndOffset.messageOffset))
-      if (logger.isTraceEnabled)
+      if (logger.isTraceEnabled) {
         trace("Follower %d has replica log end offset %d for partition %s. Received %d messages and leader hw %d"
           .format(replica.brokerId, replica.logEndOffset.messageOffset, topicPartition, messageSet.sizeInBytes, partitionData.highWatermark))
+      }
+      //todo 添加消息并更新日志的LEO
       replica.log.get.append(messageSet, assignOffsets = false)
-      if (logger.isTraceEnabled)
+      if (logger.isTraceEnabled) {
         trace("Follower %d has replica log end offset %d after appending %d bytes of messages for partition %s"
           .format(replica.brokerId, replica.logEndOffset.messageOffset, messageSet.sizeInBytes, topicPartition))
+      }
+      //取 副本的偏移量跟 主副本的最高水位 最小值
       val followerHighWatermark = replica.logEndOffset.messageOffset.min(partitionData.highWatermark)
       // for the follower replica, we do not need to keep
       // its segment base offset the physical position,
       // these values will be computed upon making the leader
+      //todo 更新备份副本的HW
       replica.highWatermark = new LogOffsetMetadata(followerHighWatermark)
-      if (logger.isTraceEnabled)
+      if (logger.isTraceEnabled) {
         trace("Follower %d set replica high watermark for partition [%s,%d] to %s"
           .format(replica.brokerId, topic, partitionId, followerHighWatermark))
-      if (quota.isThrottled(new TopicAndPartition(topic, partitionId)))
+      }
+      if (quota.isThrottled(new TopicAndPartition(topic, partitionId))) {
         quota.record(messageSet.sizeInBytes)
+      }
     } catch {
       case e: KafkaStorageException =>
         fatal(s"Disk error while replicating data for $topicPartition", e)
@@ -252,6 +261,7 @@ class ReplicaFetcherThread(name: String,
       else {
         val send = new RequestSend(sourceBroker.id.toString, header, request.toStruct)
         val clientRequest = new ClientRequest(time.milliseconds(), true, send, null)
+        //阻塞式发送并接收响应
         networkClient.blockingSendAndReceive(clientRequest)(time)
       }
     }
@@ -285,19 +295,25 @@ class ReplicaFetcherThread(name: String,
     }
   }
 
+  //构建拉取请求对象 从那个分区，拉取多少字节
   protected def buildFetchRequest(partitionMap: Seq[(TopicPartition, PartitionFetchState)]): FetchRequest = {
     val requestMap = new util.LinkedHashMap[TopicPartition, JFetchRequest.PartitionData]
 
     partitionMap.foreach { case (topicPartition, partitionFetchState) =>
       val topicAndPartition = new TopicAndPartition(topicPartition.topic, topicPartition.partition)
       // We will not include a replica in the fetch request if it should be throttled.
-      if (partitionFetchState.isActive && !shouldFollowerThrottle(quota, topicAndPartition))
+      if (partitionFetchState.isActive && !shouldFollowerThrottle(quota, topicAndPartition)) {
         requestMap.put(topicPartition, new JFetchRequest.PartitionData(partitionFetchState.offset, fetchSize))
+      }
     }
 
     val request =
-      if (fetchRequestVersion >= 3) JFetchRequest.fromReplica(replicaId, maxWait, minBytes, maxBytes, requestMap)
-      else JFetchRequest.fromReplica(replicaId, maxWait, minBytes, requestMap)
+      //对应0.10.1.1版本来说 fetchRequestVersion = 3
+      if (fetchRequestVersion >= 3) {
+        JFetchRequest.fromReplica(replicaId, maxWait, minBytes, maxBytes, requestMap)
+      } else {
+        JFetchRequest.fromReplica(replicaId, maxWait, minBytes, requestMap)
+      }
 
     new FetchRequest(request)
   }

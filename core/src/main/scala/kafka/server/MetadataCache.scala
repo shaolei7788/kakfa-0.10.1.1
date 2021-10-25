@@ -141,6 +141,7 @@ private[server] class MetadataCache(brokerId: Int) extends Logging {
     }
   }
 
+  //添加或修改分区信息
   private def addOrUpdatePartitionInfo(topic: String,
                                        partitionId: Int,
                                        stateInfo: PartitionStateInfo) {
@@ -166,8 +167,11 @@ private[server] class MetadataCache(brokerId: Int) extends Logging {
           case id if id < 0 => None
           case id => Some(id)
         }
+      //清除所有节点
       aliveNodes.clear()
+      //清除所有活着的broker
       aliveBrokers.clear()
+      //遍历集群所有活着的broker
       updateMetadataRequest.liveBrokers.asScala.foreach { broker =>
         val nodes = new EnumMap[SecurityProtocol, Node](classOf[SecurityProtocol])
         val endPoints = new EnumMap[SecurityProtocol, EndPoint](classOf[SecurityProtocol])
@@ -178,16 +182,17 @@ private[server] class MetadataCache(brokerId: Int) extends Logging {
         aliveBrokers(broker.id) = Broker(broker.id, endPoints.asScala, Option(broker.rack))
         aliveNodes(broker.id) = nodes.asScala
       }
-      //遍历分区状态信息
+      //遍历集群所有分区状态信息
       updateMetadataRequest.partitionStates.asScala.foreach { case (tp, info) =>
         val controllerId = updateMetadataRequest.controllerId
         val controllerEpoch = updateMetadataRequest.controllerEpoch
         if (info.leader == LeaderAndIsr.LeaderDuringDelete) {
-          //leader正在删除
+          //leader正在删除 移除分区信息
           removePartitionInfo(tp.topic, tp.partition)
           stateChangeLogger.trace(s"Broker $brokerId deleted partition $tp from metadata cache in response to UpdateMetadata " +
             s"request sent by controller $controllerId epoch $controllerEpoch with correlation id $correlationId")
         } else {
+          //获取分区状态信息
           val partitionInfo = partitionStateToPartitionStateInfo(info)
           //添加或更新分区信息
           addOrUpdatePartitionInfo(tp.topic, tp.partition, partitionInfo)
@@ -199,7 +204,9 @@ private[server] class MetadataCache(brokerId: Int) extends Logging {
   }
 
   private def partitionStateToPartitionStateInfo(partitionState: PartitionState): PartitionStateInfo = {
+    //样例类
     val leaderAndIsr = LeaderAndIsr(partitionState.leader, partitionState.leaderEpoch, partitionState.isr.asScala.map(_.toInt).toList, partitionState.zkVersion)
+    //样例类
     val leaderInfo = LeaderIsrAndControllerEpoch(leaderAndIsr, partitionState.controllerEpoch)
     PartitionStateInfo(leaderInfo, partitionState.replicas.asScala.map(_.toInt))
   }

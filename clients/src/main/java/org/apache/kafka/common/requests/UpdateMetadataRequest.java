@@ -119,6 +119,7 @@ public class UpdateMetadataRequest extends AbstractRequest {
         this(2, controllerId, controllerEpoch, partitionStates, liveBrokers);
     }
 
+    // partitionStates 所有发分区状态信息，  liveBrokers 所有活着的broker
     public UpdateMetadataRequest(int version, int controllerId, int controllerEpoch, Map<TopicPartition,
             PartitionState> partitionStates, Set<Broker> liveBrokers) {
         super(new Struct(ProtoUtils.requestSchema(ApiKeys.UPDATE_METADATA_KEY.id, version)));

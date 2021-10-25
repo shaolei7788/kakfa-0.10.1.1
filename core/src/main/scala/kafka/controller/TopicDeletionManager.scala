@@ -89,9 +89,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 // 3 topic已经完成最优选举
 
 //管理器允许删除主题，必须同时满足下面三个要求
-//主题还没有删除完成，还在topicsToBeDeleted集合中
-//还没开始删除主题，即不存在任何一个副本的状态是开始删除
-//删除主题有效，即不在topicsIneligibleForDeletion集合中
+//1 主题还没有删除完成，还在topicsToBeDeleted集合中
+//2 还没开始删除主题，即不存在任何一个副本的状态是开始删除
+//3 删除主题有效，即不在topicsIneligibleForDeletion集合中
 class TopicDeletionManager(controller: KafkaController,
                            initialTopicsToBeDeleted: Set[String] = Set.empty,
                            initialTopicsIneligibleForDeletion: Set[String] = Set.empty) extends Logging {

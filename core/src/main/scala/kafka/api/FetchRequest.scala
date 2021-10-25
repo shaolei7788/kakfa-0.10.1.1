@@ -86,6 +86,7 @@ object FetchRequest {
 
 }
 
+//versionId = 3
 case class FetchRequest(versionId: Short = FetchRequest.CurrentVersion,
                         correlationId: Int = FetchRequest.DefaultCorrelationId,
                         clientId: String = ConsumerConfig.DefaultClientId,

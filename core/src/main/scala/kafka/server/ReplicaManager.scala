@@ -508,7 +508,7 @@ class ReplicaManager(val config: KafkaConfig,
                     replicaId: Int,//消费者 则为-1 备份副本的编号
                     fetchMinBytes: Int,
                     fetchMaxBytes: Int,
-                    hardMaxBytesLimit: Boolean,
+                    hardMaxBytesLimit: Boolean,//hardMaxBytesLimit 为false
                     fetchInfos: Seq[(TopicAndPartition, PartitionFetchInfo)],
                     quota: ReplicaQuota = UnboundedQuota,
                     responseCallback: Seq[(TopicAndPartition, FetchResponsePartitionData)] => Unit) {
@@ -593,11 +593,10 @@ class ReplicaManager(val config: KafkaConfig,
     //limitBytes 拉取的最大字节
     def read(tp: TopicAndPartition, fetchInfo: PartitionFetchInfo, limitBytes: Int, minOneMessage: Boolean): LogReadResult = {
       val TopicAndPartition(topic, partition) = tp
+      // offset 拉取的起始偏移量  fetchSize 拉取的字节数
       val PartitionFetchInfo(offset, fetchSize) = fetchInfo
-
       BrokerTopicStats.getBrokerTopicStats(topic).totalFetchRequestRate.mark()
       BrokerTopicStats.getBrokerAllTopicsStats().totalFetchRequestRate.mark()
-
       try {
         trace(s"Fetching log segment for partition $tp, offset ${offset}, partition fetch size ${fetchSize}, " +
           s"remaining response limit ${limitBytes}" +
@@ -624,13 +623,14 @@ class ReplicaManager(val config: KafkaConfig,
          * where data gets appended to the log immediately after the replica has consumed from it
          * This can cause a replica to always be out of sync.
          */
+        //主副本的LEO
         val initialLogEndOffset = localReplica.logEndOffset
         val logReadInfo : FetchDataInfo = localReplica.log match {
           case Some(log) =>
             // fetchSize 要拉取的字节数 limitBytes 拉取的最大字节
             val adjustedFetchSize = math.min(fetchSize, limitBytes)
             // Try the read first, this tells us whether we need all of adjustedFetchSize for this partition
-            //todo Log#read  offset = 起始偏移量  adjustedFetchSize = 拉取的字节长度   maxOffsetOpt = 读取消息的上限
+            //todo Log#read  offset = 起始偏移量  adjustedFetchSize = 拉取的字节长度   maxOffsetOpt = 读取消息的上限 最大偏移量
             val fetch: FetchDataInfo = log.read(offset, adjustedFetchSize, maxOffsetOpt, minOneMessage)
 
             // If the partition is being throttled, simply return an empty set.  Throttle 掐死 勒死的意思
@@ -670,6 +670,7 @@ class ReplicaManager(val config: KafkaConfig,
     //剩余拉取的字节数
     var limitBytes = fetchMaxBytes
     val result = new mutable.ArrayBuffer[(TopicAndPartition, LogReadResult)]
+    // minOneMessage = true  最少读一条消息
     var minOneMessage = !hardMaxBytesLimit
     //要读取的分区信息
     readPartitionInfo.foreach { case (tp, fetchInfo) =>
@@ -786,7 +787,7 @@ class ReplicaManager(val config: KafkaConfig,
         } else
           Set.empty[Partition]
         val partitionsBecomeFollower = if (partitionsToBeFollower.nonEmpty){
-          //todo 为多个分区创建follower副本
+          //todo 为多个分区创建follower副本，并拉取消息
           makeFollowers(controllerId, controllerEpoch, partitionsToBeFollower, correlationId, responseMap, metadataCache)
         } else{
           Set.empty[Partition]
@@ -909,27 +910,28 @@ class ReplicaManager(val config: KafkaConfig,
         .format(localBrokerId, correlationId, controllerId, epoch, TopicAndPartition(state._1.topic, state._1.partitionId)))
     }
 
-    for (partition <- partitionState.keys)
+    for (partition <- partitionState.keys) {
       responseMap.put(new TopicPartition(partition.topic, partition.partitionId), Errors.NONE.code)
+    }
 
     val partitionsToMakeFollower: mutable.Set[Partition] = mutable.Set()
-
     try {
-
       // TODO: Delete leaders from LeaderAndIsrRequest
       partitionState.foreach{ case (partition, partitionStateInfo) =>
+        //分区的新leader
         val newLeaderBrokerId = partitionStateInfo.leader
         metadataCache.getAliveBrokers.find(_.id == newLeaderBrokerId) match {
           // Only change partition state when the leader is available
           case Some(leaderBroker) =>
             //todo 切换成follower
-            if (partition.makeFollower(controllerId, partitionStateInfo, correlationId))
+            if (partition.makeFollower(controllerId, partitionStateInfo, correlationId)) {
               partitionsToMakeFollower += partition
-            else
+            } else {
               stateChangeLogger.info(("Broker %d skipped the become-follower state change after marking its partition as follower with correlation id %d from " +
                 "controller %d epoch %d for partition [%s,%d] since the new leader %d is the same as the old leader")
                 .format(localBrokerId, correlationId, controllerId, partitionStateInfo.controllerEpoch,
                 partition.topic, partition.partitionId, newLeaderBrokerId))
+            }
           case None =>
             // The leader broker should always be present in the metadata cache.
             // If not, we should record the error message and abort the transition process for this partition
@@ -939,6 +941,7 @@ class ReplicaManager(val config: KafkaConfig,
               partition.topic, partition.partitionId, newLeaderBrokerId))
             // Create the local replica even if the leader is unavailable. This is required to ensure that we include
             // the partition's high watermark in the checkpoint file (see KAFKA-1647)
+            //获取或创建分区
             partition.getOrCreateReplica()
         }
       }
@@ -973,6 +976,7 @@ class ReplicaManager(val config: KafkaConfig,
         }
       } else {
         // we do not need to check if the leader exists again since this has been done at the beginning of this process
+        // Map[TopicPartition, BrokerAndInitialOffset]
         val partitionsToMakeFollowerWithLeaderAndOffset = partitionsToMakeFollower.map(partition =>
           new TopicPartition(partition.topic, partition.partitionId) -> BrokerAndInitialOffset(
             metadataCache.getAliveBrokers.find(_.id == partition.leaderReplicaIdOpt.get).get.getBrokerEndPoint(config.interBrokerSecurityProtocol),
@@ -1036,7 +1040,9 @@ class ReplicaManager(val config: KafkaConfig,
   }
 
   // Flushes the highwatermark value for all partitions to the highwatermark file
+  //todo 副本管理器会定时将所有分区的副本最高位刷写到 replication-offset-checkpoint
   def checkpointHighWatermarks() {
+    // 获取所有分区对应的本地副本
     val replicas = allPartitions.values.flatMap(_.getReplica(config.brokerId))
     val replicasByDir = replicas.filter(_.log.isDefined).groupBy(_.log.get.dir.getParentFile.getAbsolutePath)
     for ((dir, reps) <- replicasByDir) {

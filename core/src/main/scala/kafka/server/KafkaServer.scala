@@ -117,6 +117,7 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
   val brokerState: BrokerState = new BrokerState
 
   var apis: KafkaApis = null
+  //空实现
   var authorizer: Option[Authorizer] = None
   var socketServer: SocketServer = null
   var requestHandlerPool: KafkaRequestHandlerPool = null
@@ -191,13 +192,11 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
         quotaManagers = QuotaFactory.instantiate(config, metrics, time)
         //设置broker的状态为 Starting
         brokerState.newState(Starting)
-
         kafkaScheduler.startup()
 
         //todo 初始化zk  kafka和zk有关的客户端操作使用了zkclinet第三方库
         zkUtils = initZk()
-
-        /* Get or create cluster_id */
+        //获取或生成clusterId
         _clusterId = getOrGenerateClusterId(zkUtils)
         info(s"Cluster ID = $clusterId")
 
@@ -216,6 +215,7 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
         config.brokerId =  getBrokerId
         this.logIdent = "[Kafka Server " + config.brokerId + "], "
 
+        //创建元数据缓存对象
         metadataCache = new MetadataCache(config.brokerId)
 
         //todo socket server 服务端

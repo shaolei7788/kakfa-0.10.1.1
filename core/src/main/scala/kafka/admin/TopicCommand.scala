@@ -40,13 +40,15 @@ object TopicCommand extends Logging {
 
     val opts = new TopicCommandOptions(args)
 
-    if(args.length == 0)
+    if(args.length == 0) {
       CommandLineUtils.printUsageAndDie(opts.parser, "Create, delete, describe, or change a topic.")
+    }
 
     // should have exactly one action
     val actions = Seq(opts.createOpt, opts.listOpt, opts.alterOpt, opts.describeOpt, opts.deleteOpt).count(opts.options.has _)
-    if(actions != 1)
+    if(actions != 1) {
       CommandLineUtils.printUsageAndDie(opts.parser, "Command must include exactly one action: --list, --describe, --create, --alter or --delete")
+    }
 
     opts.checkArgs()
 
@@ -109,9 +111,13 @@ object TopicCommand extends Logging {
         CommandLineUtils.checkRequiredArgs(opts.parser, opts.options, opts.partitionsOpt, opts.replicationFactorOpt)
         val partitions = opts.options.valueOf(opts.partitionsOpt).intValue
         val replicas = opts.options.valueOf(opts.replicationFactorOpt).intValue
-        val rackAwareMode = if (opts.options.has(opts.disableRackAware)) RackAwareMode.Disabled
-                            else RackAwareMode.Enforced
-        //todo 自动分配副本，并写入zk
+        //禁止机架感知
+        val rackAwareMode = if (opts.options.has(opts.disableRackAware)) {
+          RackAwareMode.Disabled
+        } else {
+          RackAwareMode.Enforced
+        }
+        //todo 自动给topic分配副本，并写入zk
         AdminUtils.createTopic(zkUtils, topic, partitions, replicas, configs, rackAwareMode)
       }
       println("Created topic \"%s\".".format(topic))

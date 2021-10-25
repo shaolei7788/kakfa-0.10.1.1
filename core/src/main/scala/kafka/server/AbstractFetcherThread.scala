@@ -101,7 +101,7 @@ abstract class AbstractFetcherThread(name: String,
       fetchRequest
     }
     if (!fetchRequest.isEmpty) {
-      //todo
+      //todo 处理拉取请求
       processFetchRequest(fetchRequest)
     }
   }
@@ -148,12 +148,16 @@ abstract class AbstractFetcherThread(name: String,
               Errors.forCode(partitionData.errorCode) match {
                 case Errors.NONE =>
                   try {
+                    //消息大小
                     val messages = partitionData.toByteBufferMessageSet
+                    //最新偏移量
                     val newOffset = messages.shallowIterator.toSeq.lastOption.map(_.nextOffset).getOrElse(
                       currentPartitionFetchState.offset)
-
-                    fetcherLagStats.getAndMaybePut(topic, partitionId).lag = Math.max(0L, partitionData.highWatermark - newOffset)
+                    val fetcherLag: FetcherLagMetrics = fetcherLagStats.getAndMaybePut(topic, partitionId)
+                    //lag的数量   lag滞后的意思
+                    fetcherLag.lag = Math.max(0L, partitionData.highWatermark - newOffset)
                     // Once we hand off the partition data to the subclass, we can't mess with it any more in this thread
+                    //处理分区数据
                     processPartitionData(topicPartition, currentPartitionFetchState.offset, partitionData)
 
                     val validBytes = messages.validBytes

@@ -33,9 +33,13 @@ class Replica(val brokerId: Int,
               val log: Option[Log] = None) extends Logging {
   // the high watermark offset value, in non-leader replicas only its message offsets are kept
   //此字段由leader副本负责更新维护 HW 最高水位
+  // 主副本的最高水位取决于ISR中所有副本的最小偏移量
+  // 备份副本的最高水平取决于主副本的最高水位和它自己的偏移量，它会选择这两者的最小值
   @volatile private[this] var highWatermarkMetadata: LogOffsetMetadata = new LogOffsetMetadata(initialHighWatermarkValue)
   // the log end offset value, kept in all replicas;
   // 记录的是追加到log中最新消息的offset 可直接从Log.nextOffsetMetadata获取  LEO
+  // 追加消息到主副本的本地日志，备份副本拉取消息到自己的本地日志，会更新日志的偏移量
+  // 主副本所在的服务端处理备份副本的拉取请求，也会更新分区中备份副本对应的偏移量
   @volatile private[this] var logEndOffsetMetadata: LogOffsetMetadata = LogOffsetMetadata.UnknownOffsetMetadata
 
   val topic = partition.topic

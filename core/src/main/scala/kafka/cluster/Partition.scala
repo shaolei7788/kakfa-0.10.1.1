@@ -91,7 +91,9 @@ class Partition(val topic: String,
     }
   }
 
+
   //根据给定的副本编号获取或创建副本
+  //创建副本对象时，从检查点文件(replication-offset-checkpoint)读取分区的HW作为初始的最高水位
   def getOrCreateReplica(replicaId: Int = localBrokerId): Replica = {
     //获取副本编号指定的副本
     val replicaOpt = getReplica(replicaId)
@@ -107,7 +109,7 @@ class Partition(val topic: String,
           val log: Log = logManager.createLog(TopicAndPartition(topic, partitionId), config)
           //获取指定log目录对应的OffsetCheckpoint对象，它负责管理该log目录下的 replication-offset-checkpoint 文件
           //log.dir是日志目录  log.dir.getParentFile 是数据目录
-          val checkpoint = replicaManager.highWatermarkCheckpoints(log.dir.getParentFile.getAbsolutePath)
+          val checkpoint: OffsetCheckpoint = replicaManager.highWatermarkCheckpoints(log.dir.getParentFile.getAbsolutePath)
           //读取replication-offset-checkpoint文件形成map
           val offsetMap = checkpoint.read
           if (!offsetMap.contains(TopicAndPartition(topic, partitionId)))

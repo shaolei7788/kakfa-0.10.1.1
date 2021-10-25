@@ -439,17 +439,17 @@ class Log(val dir: File,//Log对应的磁盘文件 dir = /opt/module/logs/first-
         segment.append(firstOffset = appendInfo.firstOffset, largestTimestamp = appendInfo.maxTimestamp,
           offsetOfLargestTimestamp = appendInfo.offsetOfMaxTimestamp, messages = validMessages)
 
-        //todo 增加LEO  appendInfo.lastOffset 这批消息最后一个偏移量
+        //todo 修改LEO  appendInfo.lastOffset 这批消息最后一个偏移量
         updateLogEndOffset(appendInfo.lastOffset + 1)
 
         trace("Appended message set to log %s with first offset: %d, next offset: %d, and messages: %s"
           .format(this.name, appendInfo.firstOffset, nextOffsetMetadata.messageOffset, validMessages))
         //unflushedMessages 未刷新消息的数量 检测未刷到磁盘的数据是否达到一定的阈值，如果是调用flush方法刷新
         // unflushedMessages = 最新偏移量 - 检查点位置
-        if (unflushedMessages >= config.flushInterval)
+        if (unflushedMessages >= config.flushInterval) {
           //todo flushInterval 可配置 如果不配置不会执行此操作 由操作系统刷到磁盘
           flush()
-
+        }
         appendInfo
       }
     } catch {
@@ -573,7 +573,7 @@ class Log(val dir: File,//Log对应的磁盘文件 dir = /opt/module/logs/first-
     if(startOffset == next)
       return FetchDataInfo(currentNextOffsetMetadata, MessageSet.Empty)
 
-    //todo 查询baseOffset小于startOffset 且 baseOffset 最大的segment
+    //todo 从跳表 查询baseOffset小于startOffset 且 baseOffset 最大的segment
     var entry = segments.floorEntry(startOffset)
     // attempt to read beyond the log end offset is an error
     if(startOffset > next || entry == null)

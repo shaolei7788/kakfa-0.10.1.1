@@ -186,27 +186,29 @@ class LogSegment(
     val (startPosition, messageSetSize) = startOffsetAndSize
     val offsetMetadata = new LogOffsetMetadata(startOffset, this.baseOffset, startPosition.position)
 
-    //
     val adjustedMaxSize =
       if (minOneMessage) {
+        // 最少读取一条消息为true,假设 messageSetSize = 2m，而maxSize=1m 那adjustedMaxSize = 2m 否则就等于1m
         math.max(maxSize, messageSetSize)
       } else {
         maxSize
       }
     // return a log segment but with zero size in the case below
-    if (adjustedMaxSize == 0)
+    if (adjustedMaxSize == 0) {
       return FetchDataInfo(offsetMetadata, MessageSet.Empty)
+    }
 
     // 读取的字节数
     val length = maxOffset match {
       case None =>
-        // no max offset, just read until the max position
+        //todo 最大偏移量是空 那么就是副本拉取数据
         min((maxPosition - startPosition.position).toInt, adjustedMaxSize)
       case Some(offset) =>
         // there is a max offset, translate it to a file position and use that to calculate the max read size;
         // when the leader of a partition changes, it's possible for the new leader's high watermark to be less than the
         // true high watermark in the previous leader for a short window. In this window, if a consumer fetches on an
         // offset between new leader's high watermark and the log end offset, we want to return an empty response.
+        //todo 最大偏移量非空 那么就是副本拉取数据
         if (offset < startOffset) {
           return FetchDataInfo(offsetMetadata, MessageSet.Empty, firstMessageSetIncomplete = false)
         }

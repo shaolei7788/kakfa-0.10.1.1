@@ -78,12 +78,14 @@ abstract class AbstractFetcherManager(protected val name: String, clientId: Stri
       //todo 分组: broker + fetcherid,按key 进行分组
       // 一个broker 上的多个follower副本，只需要启动一个线程拉取就可以了
       // 如果不分组的话，就会一个follower开始一个线程去拉取数据，这样比较浪费线程数
+      // [BrokerAndFetcherId, Map[TopicPartition, BrokerAndInitialOffset]
       val partitionsPerFetcher =
       partitionAndOffsets.groupBy{ case(topicAndPartition, brokerAndInitialOffset) =>
         BrokerAndFetcherId(brokerAndInitialOffset.broker, getFetcherId(topicAndPartition.topic, topicAndPartition.partition))}
 
       for ((brokerAndFetcherId, partitionAndOffsets) <- partitionsPerFetcher) {
         var fetcherThread: AbstractFetcherThread = null
+        //broker获取拉取线程
         fetcherThreadMap.get(brokerAndFetcherId) match {
           case Some(f) => fetcherThread = f
           case None =>

@@ -343,7 +343,8 @@ class LogManager(val logDirs: Array[File],//数据目录
    * Write out the current recovery point for all logs to a text file in the log directory 
    * to avoid recovering the whole log on startup.
    */
-  //所有数据目录都会一起执行
+  //todo 定时将所有分区的副本偏移量(LEO)，刷写到恢复检查点文件
+  // 所有数据目录都会一起执行
   def checkpointRecoveryPointOffsets() {
     this.logDirs.foreach(checkpointLogsInDir)
   }

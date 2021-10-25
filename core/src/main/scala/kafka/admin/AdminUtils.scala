@@ -163,9 +163,10 @@ object AdminUtils extends Logging with AdminUtilities {
       val firstReplicaIndex = (currentPartitionId + startIndex) % brokerArray.length
       //记录优先分配的结果
       val replicaBuffer = mutable.ArrayBuffer(brokerArray(firstReplicaIndex))
-      for (j <- 0 until replicationFactor - 1)
+      for (j <- 0 until replicationFactor - 1) {
         //todo 分配其它副本通过 replicaIndex 实现
         replicaBuffer += brokerArray(replicaIndex(firstReplicaIndex, nextReplicaShift, j, brokerArray.length))
+      }
       ret.put(currentPartitionId, replicaBuffer)
       currentPartitionId += 1
     }
@@ -430,7 +431,7 @@ object AdminUtils extends Logging with AdminUtilities {
     val brokerMetadatas = getBrokerMetadatas(zkUtils, rackAwareMode)
     // 进行分区分配
     val replicaAssignment = AdminUtils.assignReplicasToBrokers(brokerMetadatas, partitions, replicationFactor)
-    //todo 将分配结果写入zk
+    //todo 分配分区 并将分配结果写入zk
     AdminUtils.createOrUpdateTopicPartitionAssignmentPathInZK(zkUtils, topic, replicaAssignment, topicConfig)
   }
 
@@ -448,6 +449,7 @@ object AdminUtils extends Logging with AdminUtilities {
       if (zkUtils.zkClient.exists(topicPath))
         throw new TopicExistsException("Topic \"%s\" already exists.".format(topic))
       else if (Topic.hasCollisionChars(topic)) {
+        //topic有冲突字符
         val allTopics = zkUtils.getAllTopics()
         val collidingTopics = allTopics.filter(t => Topic.hasCollision(topic, t))
         if (collidingTopics.nonEmpty) {
@@ -476,9 +478,12 @@ object AdminUtils extends Logging with AdminUtilities {
     writeTopicPartitionAssignment(zkUtils, topic, partitionReplicaAssignment, update)
   }
 
+  //在zk上创建分区分配的结果信息
   private def writeTopicPartitionAssignment(zkUtils: ZkUtils, topic: String, replicaAssignment: Map[Int, Seq[Int]], update: Boolean) {
     try {
+      // /brokers/topics/[topic]
       val zkPath = getTopicPath(topic)
+      //组装副本变成json字符串
       val jsonPartitionData = zkUtils.replicaAssignmentZkData(replicaAssignment.map(e => e._1.toString -> e._2))
 
       if (!update) {

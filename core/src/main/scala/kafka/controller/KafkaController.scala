@@ -383,6 +383,7 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
       // 1 分区有主副本，且存活，初始化为上线
       // 2 分区有主副本，但不存活，初始化为下线
       // 3 分区没有主副本，初始化为新建
+      // 4 尝试将分区状态转换为OnlinePartition
       partitionStateMachine.startup()
       //todo 给所有分区注册 分区数据修改监听器  /brokers/topics/first  {"version":1,"partitions":{"2":[0,2],"1":[2,1],"0":[1,0]}}
       controllerContext.allTopics.foreach(topic => partitionStateMachine.registerPartitionChangeListener(topic))
@@ -845,18 +846,17 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
   }
 
   private def initializeControllerContext() {
-    // update controller cache with delete topic information
+    // 从zk读取存活的brokerIds  /brokers/ids
     controllerContext.liveBrokers = zkUtils.getAllBrokersInCluster().toSet
-    //从zk读取数据 获取topic       (first,second)
+    //从zk读取所有的topic       (first,second)
     controllerContext.allTopics = zkUtils.getAllTopics().toSet
-    //todo 有个赋值操作 从zk读取数据 TopicAndPartition, Seq[Int]  key = first-0   value = (0,1,2) 副本编号集合
+    //从zk读取所有topic的AR信息  TopicAndPartition, Seq[Int]  key = first-0   value = (0,1,2) 副本编号集合
     controllerContext.partitionReplicaAssignment = zkUtils.getReplicaAssignmentForTopics(controllerContext.allTopics.toSeq)
     controllerContext.partitionLeadershipInfo = new mutable.HashMap[TopicAndPartition, LeaderIsrAndControllerEpoch]
     controllerContext.shuttingDownBrokerIds = mutable.Set.empty[Int]
     // update the leader and isr cache for all existing partitions from Zookeeper
-    //todo 会从zk读取主题分区的leader信息 有个赋值操作 controllerContext.partitionLeadershipInfo
+    //todo 会从zk读取所有主题分区的leader信息 并 更新分区leader信息
     updateLeaderAndIsrCache()
-    // start the channel manager
     //todo 启动通道管理器 建立到集群各个broker的网络连接
     startChannelManager()
     //初始化最优副本作为副本 与管理操作有关
@@ -871,14 +871,14 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
   }
 
   private def initializePreferredReplicaElection() {
-    // initialize preferred replica election state
+    // initialize preferred replica election state   Undergoing 经历
+    //获取正在进行最优副本选举  /admin/preferred_replica_election
     val partitionsUndergoingPreferredReplicaElection = zkUtils.getPartitionsUndergoingPreferredReplicaElection()
     // check if they are already completed or topic was deleted
     val partitionsThatCompletedPreferredReplicaElection = partitionsUndergoingPreferredReplicaElection.filter { partition =>
       val replicasOpt = controllerContext.partitionReplicaAssignment.get(partition)
       val topicDeleted = replicasOpt.isEmpty
-      val successful =
-        if(!topicDeleted) controllerContext.partitionLeadershipInfo(partition).leaderAndIsr.leader == replicasOpt.get.head else false
+      val successful = if(!topicDeleted) controllerContext.partitionLeadershipInfo(partition).leaderAndIsr.leader == replicasOpt.get.head else false
       successful || topicDeleted
     }
     controllerContext.partitionsUndergoingPreferredReplicaElection ++= partitionsUndergoingPreferredReplicaElection
@@ -889,7 +889,7 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
   }
 
   private def initializePartitionReassignment() {
-    // read the partitions being reassigned from zookeeper path /admin/reassign_partitions
+    //  /admin/reassign_partitions
     val partitionsBeingReassigned = zkUtils.getPartitionsBeingReassigned()
     // check if they are already completed or topic was deleted
     val reassignedPartitions = partitionsBeingReassigned.filter { partition =>
@@ -909,11 +909,17 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
   }
 
   private def initializeTopicDeletion() {
+    //  path = /admin/delete_topics
+    // 需要删除的topic
     val topicsQueuedForDeletion = zkUtils.getChildrenParentMayNotExist(ZkUtils.DeleteTopicsPath).toSet
+    // 下线的broker的副本
     val topicsWithReplicasOnDeadBrokers = controllerContext.partitionReplicaAssignment.filter { case(partition, replicas) =>
       replicas.exists(r => !controllerContext.liveBrokerIds.contains(r)) }.keySet.map(_.topic)
+    //正在进行最优副本选举的topic
     val topicsForWhichPreferredReplicaElectionIsInProgress = controllerContext.partitionsUndergoingPreferredReplicaElection.map(_.topic)
+    //正在进行分区重新分配的topic
     val topicsForWhichPartitionReassignmentIsInProgress = controllerContext.partitionsBeingReassigned.keySet.map(_.topic)
+    //删除无效的主题
     val topicsIneligibleForDeletion = topicsWithReplicasOnDeadBrokers | topicsForWhichPartitionReassignmentIsInProgress |
                                   topicsForWhichPreferredReplicaElectionIsInProgress
     info("List of topics to be deleted: %s".format(topicsQueuedForDeletion.mkString(",")))
@@ -939,10 +945,11 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
   }
 
   def updateLeaderAndIsrCache(topicAndPartitions: Set[TopicAndPartition] = controllerContext.partitionReplicaAssignment.keySet) {
-    //会从zk读取主题分区的leader信息 服务刚启动是没有leader信息
+    //会从zk读取所有主题分区的leader信息  Map[TopicAndPartition, LeaderIsrAndControllerEpoch]
     val leaderAndIsrInfo = zkUtils.getPartitionLeaderAndIsrForTopics(zkUtils.zkClient, topicAndPartitions)
-    for((topicPartition, leaderIsrAndControllerEpoch) <- leaderAndIsrInfo)
+    for((topicPartition, leaderIsrAndControllerEpoch) <- leaderAndIsrInfo) {
       controllerContext.partitionLeadershipInfo.put(topicPartition, leaderIsrAndControllerEpoch)
+    }
   }
 
   private def areReplicasInIsr(topic: String, partition: Int, replicas: Seq[Int]): Boolean = {

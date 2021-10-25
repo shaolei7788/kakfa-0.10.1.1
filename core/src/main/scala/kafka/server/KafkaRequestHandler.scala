@@ -45,7 +45,7 @@ class KafkaRequestHandler(id: Int,
           // time_window is independent of the number of threads, each recorded idle
           // time should be discounted by # threads.
           val startSelectTime = SystemTime.nanoseconds
-          //从队列获取请求
+          //todo 从队列获取请求
           req = requestChannel.receiveRequest(300)
           val idleTime = SystemTime.nanoseconds - startSelectTime
           //统计监控指标
@@ -83,6 +83,7 @@ class KafkaRequestHandlerPool(val brokerId: Int,
   for(i <- 0 until numThreads) {
     runnables(i) = new KafkaRequestHandler(i, brokerId, aggregateIdleMeter, numThreads, requestChannel, apis)
     threads(i) = Utils.daemonThread("kafka-request-handler-" + i, runnables(i))
+    //todo 启动KafkaRequestHandler线程 处理请求
     threads(i).start()
   }
 

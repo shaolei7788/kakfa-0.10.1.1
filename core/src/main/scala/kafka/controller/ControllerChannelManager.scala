@@ -442,12 +442,11 @@ class ControllerBrokerRequestBatch(controller: KafkaController) extends  Logging
                       else if (controller.config.interBrokerProtocolVersion >= KAFKA_0_9_0) 1: Short
                       else 0: Short
 
-        val updateMetadataRequest =
+        val updateMetadataRequest: UpdateMetadataRequest =
           if (version == 0) {
             val liveBrokers = controllerContext.liveOrShuttingDownBrokers.map(_.getNode(SecurityProtocol.PLAINTEXT))
             new UpdateMetadataRequest(controllerId, controllerEpoch, liveBrokers.asJava, partitionStates.asJava)
-          }
-          else {
+          } else {
             val liveBrokers = controllerContext.liveOrShuttingDownBrokers.map { broker =>
               val endPoints = broker.endPoints.map { case (securityProtocol, endPoint) =>
                 securityProtocol -> new UpdateMetadataRequest.EndPoint(endPoint.host, endPoint.port)

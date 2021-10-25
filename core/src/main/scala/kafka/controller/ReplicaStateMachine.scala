@@ -410,6 +410,7 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
                 .format(newBrokerIdsSorted.mkString(","), deadBrokerIdsSorted.mkString(","), liveBrokerIdsSorted.mkString(",")))
               //todo 添加broker 获取与一个broker连接的各种信息
               newBrokers.foreach(controllerContext.controllerChannelManager.addBroker)
+              //移除broker
               deadBrokerIds.foreach(controllerContext.controllerChannelManager.removeBroker)
               if(newBrokerIds.nonEmpty) {
                 //todo broker上线
