@@ -309,7 +309,7 @@ public class NetworkClient implements KafkaClient {
          * kafka获取元数据的流程跟发送消息的流程是一模一样的
          * 获取元数据--> 判断网络连接是否建立好--> 建立网络连接--> 发送请求(获取元数据的请求)--> 服务端发送回来响应
          */
-        //完成接收的处理器
+        //处理完成接收
         handleCompletedReceives(responses, updatedNow);
         //处理断开的连接
         handleDisconnections(responses, updatedNow);

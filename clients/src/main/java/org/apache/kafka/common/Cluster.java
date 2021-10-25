@@ -44,9 +44,9 @@ public final class Cluster {
      */
     //一个partition和partition的相关信息之间的对应关系 因为partition有副本
     private final Map<TopicPartition, PartitionInfo> partitionsByTopicPartition;
-    //一个topic对应哪些分区
+    //topic对应哪些分区
     private final Map<String, List<PartitionInfo>> partitionsByTopic;
-    //一个topic对应哪些可用的分区
+    //topic对应哪些可用的分区
     private final Map<String, List<PartitionInfo>> availablePartitionsByTopic;
     //一台服务器上和这台服务器上有哪些partition,key用的是服务器的编号
     //我们搭建kafka集群的时候设置的broker.id,一般从0开始 每个broker都有一个唯一的id值用来区分彼此

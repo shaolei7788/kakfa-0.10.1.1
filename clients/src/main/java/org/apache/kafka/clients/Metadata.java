@@ -227,6 +227,7 @@ public final class Metadata {
      * Updates the cluster metadata. If topic expiry is enabled, expiry time
      * is set for topics if required and expired topics are removed from the metadata.
      */
+    //更新元数据信息
     public synchronized void update(Cluster cluster, long now) {
         Objects.requireNonNull(cluster, "cluster should not be null");
         this.needUpdate = false;
@@ -237,21 +238,23 @@ public final class Metadata {
         if (topicExpiryEnabled) {
             // Handle expiry of topics from the metadata refresh set.
             // 处理元数据刷新之后过期的主题
-            //当第一次进来的时候,topics是空的,所以下面的代码是不会执行的
+            // 当第一次进来的时候,topics是空的,所以下面的代码是不会执行的
             for (Iterator<Map.Entry<String, Long>> it = topics.entrySet().iterator(); it.hasNext(); ) {
                 Map.Entry<String, Long> entry = it.next();
                 long expireMs = entry.getValue();
-                if (expireMs == TOPIC_EXPIRY_NEEDS_UPDATE)
+                // TOPIC_EXPIRY_NEEDS_UPDATE = -1
+                if (expireMs == TOPIC_EXPIRY_NEEDS_UPDATE) {
                     entry.setValue(now + TOPIC_EXPIRY_MS);
-                else if (expireMs <= now) {
+                }else if (expireMs <= now) {
                     it.remove();
                     log.debug("Removing unused topic {} from the metadata list, expiryMs {} now {}", entry.getKey(), expireMs, now);
                 }
             }
         }
 
-        for (Listener listener: listeners)
+        for (Listener listener: listeners) {
             listener.onMetadataUpdate(cluster);
+        }
 
         String previousClusterId = cluster.clusterResource().clusterId();
         //这个的默认值是false,第一次执行到这里的时候,就会直接跳进else的代码里
