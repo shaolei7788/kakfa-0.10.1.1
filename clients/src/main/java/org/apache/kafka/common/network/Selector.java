@@ -341,9 +341,9 @@ public class Selector implements Selectable {
             KafkaChannel channel = channel(key);
             // register all per-connection metrics at once
             sensors.maybeRegisterConnectionMetrics(channel.id());
-            if (idleExpiryManager != null)
+            if (idleExpiryManager != null) {
                 idleExpiryManager.update(channel.id(), currentTimeNanos);
-
+            }
             try {
                 /* complete any connections that have finished their handshake (either normally or immediately) */
                 if (isImmediatelyConnected || key.isConnectable()) {
