@@ -76,7 +76,6 @@ public final class Metadata {
     private boolean needMetadataForAllTopics;
     //主题是否已经过期
     private final boolean topicExpiryEnabled;
-
     /**
      * Create a metadata instance with reasonable defaults
      */
