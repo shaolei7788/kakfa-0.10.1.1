@@ -63,7 +63,6 @@ import java.util.concurrent.TimeUnit;
  *
  * This class is not thread safe!
  */
-
 /**
  * TODO 这个Selector是Kafka自己封装的一个Selector
  * 它是基于java NIO 中的Selector 去封装的
