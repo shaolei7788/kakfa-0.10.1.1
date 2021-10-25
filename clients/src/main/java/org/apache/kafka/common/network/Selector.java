@@ -362,6 +362,7 @@ public class Selector implements Selectable {
                     } else
                         continue;
                 }
+
                 /* if channel is not ready finish prepare */
                 if (channel.isConnected() && !channel.ready())
                     channel.prepare();
