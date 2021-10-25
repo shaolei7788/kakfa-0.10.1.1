@@ -215,7 +215,7 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
         config.brokerId =  getBrokerId
         this.logIdent = "[Kafka Server " + config.brokerId + "], "
 
-        //创建元数据缓存对象
+        //创建元数据缓存对象  缓存了所有活着的broker,主题 & 分区状态信息
         metadataCache = new MetadataCache(config.brokerId)
 
         //todo socket server 服务端
@@ -271,8 +271,7 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
             (protocol, endpoint)
         }
         //todo 创建kafka健康检查对象，会在zk上注册broker信息
-        kafkaHealthcheck = new KafkaHealthcheck(config.brokerId, listeners, zkUtils, config.rack,
-          config.interBrokerProtocolVersion)
+        kafkaHealthcheck = new KafkaHealthcheck(config.brokerId, listeners, zkUtils, config.rack, config.interBrokerProtocolVersion)
         kafkaHealthcheck.startup()
 
         // Now that the broker id is successfully registered via KafkaHealthcheck, checkpoint it

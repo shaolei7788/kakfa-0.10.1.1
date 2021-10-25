@@ -98,6 +98,7 @@ public class Selector implements Selectable {
     private final String metricGrpPrefix;
     private final Map<String, String> metricTags;
     private final ChannelBuilder channelBuilder;
+    //-1  没有限制
     private final int maxReceiveSize;
     private final boolean metricsPerConnection;
     private final IdleExpiryManager idleExpiryManager;

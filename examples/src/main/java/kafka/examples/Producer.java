@@ -49,7 +49,7 @@ public class Producer {
 
     public void dowork() {
         long startTime = System.currentTimeMillis();
-        for (int i = 500; i < 2000; i++) {
+        for (int i = 10; i < 20; i++) {
             //同步发送
             producer.send(new ProducerRecord<String, String>(topic,"hello" +i));
             try {

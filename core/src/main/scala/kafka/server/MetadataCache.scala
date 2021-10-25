@@ -38,6 +38,7 @@ import org.apache.kafka.common.requests.{MetadataResponse, PartitionState, Updat
  */
 private[server] class MetadataCache(brokerId: Int) extends Logging {
   private val stateChangeLogger = KafkaController.stateChangeLogger
+  //缓存了所有topic分区状态信息 key = topic     value = [key = partitionId,value = 分区状态信息]
   private val cache = mutable.Map[String, mutable.Map[Int, PartitionStateInfo]]()
   private var controllerId: Option[Int] = None
   private val aliveBrokers = mutable.Map[Int, Broker]()

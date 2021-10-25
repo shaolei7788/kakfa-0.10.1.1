@@ -30,6 +30,7 @@ public class NetworkReceive implements Receive {
     private final String source;
     //代表数据长度的字节缓冲区
     private final ByteBuffer size;
+
     private final int maxSize;
     //代表数据内容的字节缓冲区
     private ByteBuffer buffer;
