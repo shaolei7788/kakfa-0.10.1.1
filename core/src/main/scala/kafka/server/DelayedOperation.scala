@@ -45,8 +45,8 @@ import scala.collection._
  */
 //todo
 // 延迟操作不仅存在于延迟缓存中，还会被定时器监控
-// 将延迟操作加入延迟缓存中，目的是让外部事件有机会尝试完成延迟的操作
-// 将延迟操作加入定时器中，目的是在延迟超时后，服务端可以强制返回响应结果给客户端
+// 将延迟操作加入延迟缓存中，目的是让外部事件有机会尝试完成延迟的操作，当可以完成延迟操作时，服务器会返回响应结果给客户端，并将延迟操作删除
+// 将延迟操作加入定时器中，目的是在延迟超时后，服务端可以强制返回响应结果给客户端  (没有分区)
 abstract class DelayedOperation(override val delayMs: Long) extends TimerTask with Logging {
 
   // 标识该延迟操作是否已经完成
@@ -93,7 +93,7 @@ abstract class DelayedOperation(override val delayMs: Long) extends TimerTask wi
    *
    * This function needs to be defined in subclasses
    */
-  //尝试完成被延迟的任务，在forceComplete中只会调用一次
+  //尝试完成被延迟的任务，如果可以完成，调用forceComplete处理完成的逻辑
   def tryComplete(): Boolean
 
   /**
@@ -116,7 +116,6 @@ abstract class DelayedOperation(override val delayMs: Long) extends TimerTask wi
 
 //保存延迟请求的缓冲区也就是说 它保存的是因为不满足条件而无法完成，但是又没有超时的请求
 object DelayedOperationPurgatory {
-
   def apply[T <: DelayedOperation](purgatoryName: String,
                                    brokerId: Int = 0,
                                    purgeInterval: Int = 1000): DelayedOperationPurgatory[T] = {
@@ -185,6 +184,7 @@ class DelayedOperationPurgatory[T <: DelayedOperation](purgatoryName: String,
    */
   //尝试完成延迟操作，如果不能完成就以指定的键监控这个延迟操作
   // operation = DelayedJoin    watchKeys = GroupKey
+  // operation = DelayedProduce    watchKeys = Seq[TopicPartitionOperationKey]
   def tryCompleteElseWatch(operation: T, watchKeys: Seq[Any]): Boolean = {
     assert(watchKeys.nonEmpty, "The watch key list can't be empty")
     //第一次尝试完成延迟操作
@@ -199,10 +199,9 @@ class DelayedOperationPurgatory[T <: DelayedOperation](purgatoryName: String,
       //在加入过程中，延迟操作已经完成，那么之后的键不要再监视了
       if (operation.isCompleted)
         return false
-      //延迟操作没有完成，才将操作加入到每个键的监视列表中
-      // 将该operation加入到Key所在的WatcherList
+      //延迟操作没有完成，将延迟操作加入到每个键的监视列表中，将该operation加入到Watcher中
       watchForOperation(key, operation)
-      // 设置watchCreated标记，表明该任务已经被加入到WatcherList
+      // 设置watchCreated标记，表明该任务已经被加入到Watcher
       if (!watchCreated) {
         //一旦为true，其它键就没有机会再执行了
         watchCreated = true
@@ -219,8 +218,9 @@ class DelayedOperationPurgatory[T <: DelayedOperation](purgatoryName: String,
     // 经过两轮safeTryComplete，但还没完成，并且也被监视了，才会加入到定时器中
     // 如果依然不能完成此请求，将其加入到过期队列
     if (!operation.isCompleted) {
-      //todo 加入失效队列 operation extends TimerTask
-      // SystemTimer#add
+      //todo 加入定时器的延迟队列  operation extends TimerTask
+      // 当延迟操作超时后，定时器会将延迟操作从延迟队列中弹出，并调用延迟操作的允许方法，强制完成延迟操作
+      //SystemTimer#add
       timeoutTimer.add(operation)
       //添加前没完成，但添加后完成了
       if (operation.isCompleted) {
@@ -237,13 +237,13 @@ class DelayedOperationPurgatory[T <: DelayedOperation](purgatoryName: String,
    *
    * @return the number of completed operations during this process
    */
-  //检查并尝试完成指定键的延迟操作，在tryCompleteElseWatch，如果延迟操作没有完成，会被加入到延迟缓存中
+  //检查并尝试完成指定键的延迟操作  延迟生产，延迟拉取 key 是分区key，但是延迟的加入，延迟的心跳的key是消费者，和消费者编号
   def checkAndComplete(key: Any): Int = {
     // 获取WatcherList中Key对应的Watchers对象实例
     val watchers: Watchers = inReadLock(removeWatchersLock) { watchersForKey.get(key) }
-    if(watchers == null)
+    if(watchers == null) {
       0
-    else {
+    } else {
       // 尝试完成满足完成条件的延迟请求并返回成功完成的请求数
       watchers.tryCompleteWatched()
     }
@@ -274,7 +274,8 @@ class DelayedOperationPurgatory[T <: DelayedOperation](purgatoryName: String,
   //根据给定的key，监视指定的延迟操作
   private def watchForOperation(key: Any, operation: T) {
     inReadLock(removeWatchersLock) {
-      val watcher = watchersForKey.getAndMaybePut(key)
+      //根据给定的key 获取或放入
+      val watcher: Watchers = watchersForKey.getAndMaybePut(key)
       //将延迟操作加入到键的监视器列表中
       watcher.watch(operation)
     }
@@ -318,6 +319,9 @@ class DelayedOperationPurgatory[T <: DelayedOperation](purgatoryName: String,
 
     // add the element to watch
     //将延迟操作加到键的监视列表中
+    //为什么用Queue，是因为一个key(TopicPartitionOperationKey) 可能对应多个延迟操作对象
+    //一个客户端请求对应一个延迟操作，一个延迟操作对应多个分区，在延迟缓存中，一个分区对应多个延迟操作
+    //外部事件以分区为粒度，所有延迟缓存保存了分区到延迟操作的映射关系
     def watch(t: T) {
       operations.add(t)
     }
@@ -329,26 +333,28 @@ class DelayedOperationPurgatory[T <: DelayedOperation](purgatoryName: String,
       while (iter.hasNext) {
         val curr = iter.next()
         if (curr.isCompleted) {
-          // another thread has completed this operation, just remove it
+          //其它线程完成了这个延迟操作
           iter.remove()
         } else if (curr.safeTryComplete()) {
+          //当前线程完成了这个延迟操作
           iter.remove()
           completed += 1
         }
       }
-
-      if (operations.isEmpty)
+      if (operations.isEmpty) {
         removeKeyIfEmpty(key, this)
+      }
       completed
     }
 
-    // 遍历列表，并移除已经完成的延迟   purge:清理
+    // 遍历列表，并移除已经完成的延迟，它被清理定时器周期性地执行，  purge:清理
     def purgeCompleted(): Int = {
       var purged = 0
       val iter = operations.iterator()
       while (iter.hasNext) {
         val curr = iter.next()
         if (curr.isCompleted) {
+          //操作已经完成从监视队列中移除
           iter.remove()
           purged += 1
         }

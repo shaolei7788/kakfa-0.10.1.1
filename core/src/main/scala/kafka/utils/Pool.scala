@@ -55,8 +55,9 @@ class Pool[K,V](valueFactory: Option[(K) => V] = None) extends Iterable[(K, V)] 
     if (curr == null) {
       createLock synchronized {
         val curr = pool.get(key)
-        if (curr == null)
+        if (curr == null) {
           pool.put(key, valueFactory.get(key))
+        }
         pool.get(key)
       }
     }

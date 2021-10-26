@@ -348,28 +348,30 @@ class Partition(val topic: String,
    * fully caught up to the (local) leader's offset corresponding to this produce request before we acknowledge the
    * produce request.
    */
-  //todo 检测其参数指定的消息是否已经被ISR集合中所有的follower副本同步
+  //todo 检测其参数指定的偏移量的消息是否已经被ISR集合中所有的follower副本同步
   def checkEnoughReplicasReachOffset(requiredOffset: Long): (Boolean, Errors) = {
+    //获取ledaer主副本
     leaderReplicaIfLocal() match {
       case Some(leaderReplica) =>
         // keep the current immutable replica list reference
         val curInSyncReplicas = inSyncReplicas
+        //计算发送了应答的副本数量，副本的偏移量超过requiredOffset就表示发送了应答
         def numAcks = curInSyncReplicas.count { r =>
-          if (!r.isLocal)
+          if (!r.isLocal) {
+            //不是本地副本
             if (r.logEndOffset.messageOffset >= requiredOffset) {
               trace(s"Replica ${r.brokerId} of ${topic}-${partitionId} received offset $requiredOffset")
               true
-            }
-            else
+            } else {
               false
-          else
-            true /* also count the local (leader) replica */
+            }
+          } else {
+            true
+          } /* also count the local (leader) replica */
         }
-
         trace(s"$numAcks acks satisfied for ${topic}-${partitionId} with acks = -1")
-
         val minIsr = leaderReplica.log.get.config.minInSyncReplicas
-
+        //leader副本的HW要大于等于要求的偏移量，表示所有的备份副本都赶上了主副本
         if (leaderReplica.highWatermark.messageOffset >= requiredOffset) {
           /*
            * The topic may be configured not to accept messages if there are not enough replicas in ISR
@@ -377,10 +379,14 @@ class Partition(val topic: String,
            */
           if (minIsr <= curInSyncReplicas.size)
             (true, Errors.NONE)
-          else
+          else {
+            //ISR副本数量不满足最小的设置
             (true, Errors.NOT_ENOUGH_REPLICAS_AFTER_APPEND)
-        } else
+          }
+        } else {
+          //ISR所有的备份副本没有赶上主副本
           (false, Errors.NONE)
+        }
       case None =>
         (false, Errors.NOT_LEADER_FOR_PARTITION)
     }

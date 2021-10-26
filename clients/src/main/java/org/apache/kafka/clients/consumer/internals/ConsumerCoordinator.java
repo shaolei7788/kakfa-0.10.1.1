@@ -417,6 +417,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
             // contact coordinator to fetch committed offsets
             //todo 发送ApiKeys.OFFSET_FETCH 请求给协调者，获取分区已提交的偏移量
             RequestFuture<Map<TopicPartition, OffsetAndMetadata>> future = sendOffsetFetchRequest(partitions);
+            //阻塞式获取响应
             client.poll(future);
 
             if (future.succeeded())

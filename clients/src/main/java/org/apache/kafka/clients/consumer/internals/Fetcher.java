@@ -88,6 +88,7 @@ public class Fetcher<K, V> {
     //每次获取record的最大数量
     private final int maxPollRecords;
     private final boolean checkCrcs;
+    //元数据信息
     private final Metadata metadata;
     private final FetchManagerMetrics sensors;
     private final SubscriptionState subscriptions;
@@ -154,7 +155,7 @@ public class Fetcher<K, V> {
         for (Map.Entry<Node, FetchRequest> fetchEntry : fetchRequests.entrySet()) {
             final FetchRequest request = fetchEntry.getValue();
             final Node fetchTarget = fetchEntry.getKey();
-            //todo 将request添加到unsent集合中等待发送
+            //todo client.send是将request添加到unsent集合中等待发送
             // client.send方法不会被阻塞,而是返回一个异步对象，同时为了处理服务端的响应结果，在返回的异步对象添加一个监听器
             // 当收到服务端的响应结果时，监听器的回调方法将执行
             RequestFuture<ClientResponse> send = client.send(fetchTarget, ApiKeys.FETCH, request);
@@ -179,7 +180,7 @@ public class Fetcher<K, V> {
                                 TopicPartition partition = entry.getKey();
                                 //todo 在拉取请求时，就是把分区状态的position变量作为拉取变量
                                 long fetchOffset = request.fetchData().get(partition).offset;
-                                //拉取的数据
+                                //响应的拉取数据  有错误码，最高水位，消息集
                                 FetchResponse.PartitionData fetchData = entry.getValue();
                                 //todo 将获取的数据添加到completedFetches中
                                 completedFetches.add(new CompletedFetch(partition, fetchOffset, fetchData, metricAggregator));
@@ -224,7 +225,7 @@ public class Fetcher<K, V> {
         for (TopicPartition tp : partitions) {
             if (!subscriptions.isAssigned(tp) || subscriptions.isFetchable(tp))
                 continue;
-            //重置拉取偏移量到已经提交的位置
+            //判断是否需要重置偏移量
             if (subscriptions.isOffsetResetNeeded(tp)) {
                 resetOffset(tp);
             } else if (subscriptions.committed(tp) == null) {
@@ -366,8 +367,10 @@ public class Fetcher<K, V> {
         long offset = getOffsetsByTimes(Collections.singletonMap(partition, timestamp), Long.MAX_VALUE).get(partition).offset();
 
         // we might lose the assignment while fetching the offset, so check it is still active
-        if (subscriptions.isAssigned(partition))
+        if (subscriptions.isAssigned(partition)) {
+            //从指定位置消费
             this.subscriptions.seek(partition, offset);
+        }
     }
 
     public Map<TopicPartition, OffsetAndTimestamp> getOffsetsByTimes(Map<TopicPartition, Long> timestampsToSearch,
@@ -466,6 +469,7 @@ public class Fetcher<K, V> {
                         newRecords.addAll(records);
                         drained.put(partition, newRecords);
                     }
+                    //修改recordsRemaining 可能回退出循环
                     recordsRemaining -= records.size();
                 }
             }
@@ -477,7 +481,6 @@ public class Fetcher<K, V> {
     private List<ConsumerRecord<K, V>> drainRecords(PartitionRecords<K, V> partitionRecords, int maxRecords) {
         if (partitionRecords.isDrained())
             return Collections.emptyList();
-
         if (!subscriptions.isAssigned(partitionRecords.partition)) {
             // this can happen when a rebalance happened before fetched records are returned to the consumer's poll call
             log.debug("Not returning fetched records for partition {} since it is no longer assigned", partitionRecords.partition);
@@ -490,6 +493,7 @@ public class Fetcher<K, V> {
             } else if (partitionRecords.fetchOffset == position) {
                 //todo 正常走这里 即你要拉取的分区偏移量跟拉取的分区偏移量是一样的
                 List<ConsumerRecord<K, V>> partRecords = partitionRecords.drainRecords(maxRecords);
+                //partRecords 最后一条数据的偏移量 + 1
                 long nextOffset = partRecords.get(partRecords.size() - 1).offset() + 1;
                 log.trace("Returning fetched records at offset {} for assigned partition {} and update " +
                         "position to {}", position, partitionRecords.partition, nextOffset);
@@ -632,6 +636,7 @@ public class Fetcher<K, V> {
             future.complete(timestampOffsetMap);
     }
 
+    //获取允许拉取，即存在拉取偏移量的分区
     private List<TopicPartition> fetchablePartitions() {
         List<TopicPartition> fetchable = subscriptions.fetchablePartitions();
         //nextInLineRecords 没有来自次分区的消息
@@ -655,7 +660,9 @@ public class Fetcher<K, V> {
         //获取kafka集群
         Cluster cluster = metadata.fetch();
         Map<Node, LinkedHashMap<TopicPartition, FetchRequest.PartitionData>> fetchable = new LinkedHashMap<>();
+        //获取允许拉取，即存在拉取偏移量的分区
         for (TopicPartition partition : fetchablePartitions()) {
+            //获取分区的leader的broker节点
             Node node = cluster.leaderFor(partition);
             if (node == null) {
                 metadata.requestUpdate();
@@ -691,14 +698,18 @@ public class Fetcher<K, V> {
      * The callback for fetch completion
      */
     private PartitionRecords<K, V> parseFetchedData(CompletedFetch completedFetch) {
+        //主题分区
         TopicPartition tp = completedFetch.partition;
+        //响应的数据
         FetchResponse.PartitionData partition = completedFetch.partitionData;
+        //拉取偏移量 即从那个位置开始拉
         long fetchOffset = completedFetch.fetchedOffset;
+        //读取消息的字节数
         int bytes = 0;
+        //消息的条数
         int recordsCount = 0;
         PartitionRecords<K, V> parsedRecords = null;
         Errors error = Errors.forCode(partition.errorCode);
-
         try {
             if (!subscriptions.isFetchable(tp)) {
                 // this can happen when a rebalance happened or a partition consumption paused
@@ -718,9 +729,10 @@ public class Fetcher<K, V> {
                 ByteBuffer buffer = partition.recordSet;
                 //todo 将ByteBuffer转为MemoryRecords
                 MemoryRecords records = MemoryRecords.readableRecords(buffer);
+                //用于接收解析后的ConsumerRecord对象
                 List<ConsumerRecord<K, V>> parsed = new ArrayList<>();
                 for (LogEntry logEntry : records) {
-                    // 忽略比position更早的消息
+                    // 只获取比当前偏移量大的数据，忽略比position更早的消息
                     if (logEntry.offset() >= position) {
                         parsed.add(parseRecord(tp, logEntry));
                         bytes += logEntry.size();
@@ -832,6 +844,7 @@ public class Fetcher<K, V> {
             this.records = null;
         }
 
+        //抽干记录，也就是将PartitionRecords 分批返给我们
         private List<ConsumerRecord<K, V>> drainRecords(int n) {
             if (isDrained())
                 return Collections.emptyList();

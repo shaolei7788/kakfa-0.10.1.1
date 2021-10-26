@@ -233,7 +233,7 @@ public final class Metadata {
         this.lastRefreshMs = now;
         this.lastSuccessfulRefreshMs = now;
         this.version += 1;//如果线程获取到了元数据,元数据的版本号会递增加1
-        // 这个默认值是true
+        // 这个默认值是false
         if (topicExpiryEnabled) {
             // Handle expiry of topics from the metadata refresh set.
             // 处理元数据刷新之后过期的主题

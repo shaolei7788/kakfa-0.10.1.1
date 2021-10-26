@@ -74,6 +74,7 @@ public class MemoryRecords implements Records {
     }
 
     public static MemoryRecords readableRecords(ByteBuffer buffer) {
+        //  第三个参数为false 也就是读模式
         return new MemoryRecords(buffer, CompressionType.NONE, false, WRITE_LIMIT_FOR_READABLE_ONLY);
     }
 

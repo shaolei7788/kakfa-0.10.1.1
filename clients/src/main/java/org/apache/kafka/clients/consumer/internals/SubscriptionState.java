@@ -46,7 +46,7 @@ import java.util.regex.Pattern;
  *
  * This class also maintains a cache of the latest commit position for each of the assigned
  * partitions. This is updated through {@link #committed(TopicPartition, OffsetAndMetadata)} and can be used
- * to set the initial fetch position (e.g. {@link Fetcher#resetOffset(TopicPartition)}.
+ * to set the initial fetch position (e.g. {@link Fetcher resetOffset(TopicPartition)}.
  */
 //消费者订阅状态 保存了分配给消费者的所有分区及其状态
 public class SubscriptionState {
@@ -404,7 +404,7 @@ public class SubscriptionState {
         return listener;
     }
 
-    //todo 分区状态
+    //todo 主题分区状态
     // 消费者拉取消息时要更新拉取偏移量
     // 处理消息时要更新提交偏移量
     private static class TopicPartitionState {

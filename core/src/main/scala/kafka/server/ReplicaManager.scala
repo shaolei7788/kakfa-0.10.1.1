@@ -148,10 +148,12 @@ class ReplicaManager(val config: KafkaConfig,
   private val lastIsrChangeMs = new AtomicLong(System.currentTimeMillis())
   private val lastIsrPropagationMs = new AtomicLong(System.currentTimeMillis())
 
-  //管理delayedproduce
+  //延迟生产缓存  类似于map key=分区key  value = 延迟操作的队列
+  //外部事件发送时，服务端会以分区为粒度，尝试完成这个分区中的所有延迟操作
+  //如果指定分区对应的某个延迟操作可以被完成，那么延迟操作会从这个分区的延迟操作队列中移除，其它分区中的延迟操作并不会被立即删除
   val delayedProducePurgatory = DelayedOperationPurgatory[DelayedProduce](
     purgatoryName = "Produce", config.brokerId, config.producerPurgatoryPurgeIntervalRequests)
-  //管理delayedfench
+  //延迟拉取缓存
   val delayedFetchPurgatory = DelayedOperationPurgatory[DelayedFetch](
     purgatoryName = "Fetch", config.brokerId, config.fetchPurgatoryPurgeIntervalRequests)
 
@@ -309,7 +311,7 @@ class ReplicaManager(val config: KafkaConfig,
     allPartitions.getAndMaybePut((topic, partitionId))
   }
 
-
+  //获取指定topic，分区id的分区对象
   def getPartition(topic: String, partitionId: Int): Option[Partition] = {
     // allPartitions 保存了当前broker上分配的所有partition
     val partition = allPartitions.get((topic, partitionId))
@@ -367,35 +369,40 @@ class ReplicaManager(val config: KafkaConfig,
       val localProduceResults = appendToLocalLog(internalTopicsAllowed, messagesPerPartition, requiredAcks)
       debug("Produce to local log in %d ms".format(SystemTime.milliseconds - sTime))
 
-      //todo 根据写日志返回的结果，封装返回给客户端的响应
+      //todo 根据写日志返回的结果，封装返回给客户端的响应  Map[TopicPartition, ProducePartitionStatus]
       val produceStatus = localProduceResults.map { case (topicPartition, result) =>
         topicPartition ->
                 ProducePartitionStatus(
-                  //设置下一条待写入消息的偏移量
+                  //设置下一条待写入消息的偏移量   requiredOffset
                   result.info.lastOffset + 1,
                   //封装响应结果
                   new PartitionResponse(result.errorCode, result.info.firstOffset, result.info.logAppendTime)) // response status
       }
+      // kafka服务端在处理客户端的一些请求时，如果不能及时返回相应给客户端
+      // 会在服务端创建一个延迟操作对象delayedOperation,并放在延迟缓存中 delayedOperationPurgatory
+      // 延迟操作有很多种，延迟的生产，延迟的响应，延迟的加入，延迟的心跳
+
       //todo 判断是否创建延迟生产的请求 有3个要求
       // 1 生产者等待所有ISR备份副本都向主副本发送应答 requiredAcks == -1
       // 2 生产者发送的消息有数据： messagesPerPartition.size > 0
       // 3 至少有一个分区写入主副本的本地日志文件是成功的
       if (delayedRequestRequired(requiredAcks, messagesPerPartition, localProduceResults)) {
-        // create delayed produce operation
+        // 创建生产元数据
         val produceMetadata = ProduceMetadata(requiredAcks, produceStatus)
-        //todo kafka服务端在处理客户端的一些请求时，如果不能及时返回相应给客户端
-        //todo 会在服务端创建一个延迟操作对象delayedOperation,并放在延迟缓存中 delayedOperationPurgatory
-        //todo 延迟操作有很多种，延迟的生产，延迟的响应，延迟的加入，延迟的心跳
-        //todo 创建delayedProduce对象，超过timeout时间后这个操作会被认定为超时，并立即返回，发送响应给客户端
+        // 创建delayedProduce对象，超过timeout时间后这个操作会被认定为超时，并立即返回，发送响应给客户端
+        //服务端为每个请求都会创建一个延迟操作对象，而不是为每个分区创建一个延迟对象
         val delayedProduce = new DelayedProduce(timeout, produceMetadata, this, responseCallback)
-        // todo 遍历有哪些topic需要检测延迟操作是否完成
+        //messagesPerPartition.keys = TopicPartition TopicPartitionOperationKey是样例类
+        //todo 遍历有哪些topic需要检测延迟操作是否完成
         val producerRequestKeys = messagesPerPartition.keys.map(new TopicPartitionOperationKey(_)).toSeq
-
         // try to complete the request immediately, otherwise put it into the purgatory
         // this is because while the delayed produce operation is being created, new
         // requests may arrive and hence make this operation completable.
         // Purgatory 炼狱的意思
         //尝试执行delayedProduce 的 tryComplete,执行成则返回，失败则加入到哈希定时器
+        // 延迟操作对象有两种方式可以从延迟缓存队列中完成，并从缓存队列中移除
+        // 1 延迟操作对应的外部事件发生时，外部事件会尝试完成延迟缓存中的延迟操作
+        // 1 如果外部事件还没有完成延迟操作，超时时间达到后，会强制完成延迟的操作
         delayedProducePurgatory.tryCompleteElseWatch(delayedProduce, producerRequestKeys)
       } else {
         // we can respond immediately
@@ -423,6 +430,8 @@ class ReplicaManager(val config: KafkaConfig,
                                        localProduceResults: Map[TopicPartition, LogAppendResult]): Boolean = {
     requiredAcks == -1 &&
     messagesPerPartition.nonEmpty &&
+    // localProduceResults.values.count(_.error.isDefined) 写入分区错误的个数
+    // messagesPerPartition.size 写入分区的个数
     localProduceResults.values.count(_.error.isDefined) < messagesPerPartition.size
   }
 

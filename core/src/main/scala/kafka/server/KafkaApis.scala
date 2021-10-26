@@ -453,8 +453,6 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
         produceResponseCallback)
     }
 
-
-
     if (authorizedRequestInfo.isEmpty) {
       //授权信息为空 直接发送响应回调
       sendResponseCallback(Map.empty)
