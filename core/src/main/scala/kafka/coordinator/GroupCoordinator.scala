@@ -232,6 +232,7 @@ class GroupCoordinator(val brokerId: Int,
     }
   }
 
+
   def handleSyncGroup(groupId: String,
                       generation: Int,
                       memberId: String,
