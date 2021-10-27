@@ -14,10 +14,8 @@
 // limitations under the License.
 
 repositories {
-  repositories {
-    // For license plugin.
-    maven {
-      url 'http://dl.bintray.com/content/netflixoss/external-gradle-plugins/'
-    }
-  }
+  mavenLocal()
+  maven { url 'http://maven.aliyun.com/nexus/content/groups/public' }
+  mavenCentral()
+  jcenter()
 }
