@@ -1153,6 +1153,7 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
         syncGroupRequest.groupId(),
         syncGroupRequest.generationId(),
         syncGroupRequest.memberId(),
+        //syncGroupRequest.groupAssignment() 组分配信息  Map<memberId, memberMetadata>
         syncGroupRequest.groupAssignment().mapValues(Utils.toArray(_)),
         sendResponseCallback
       )

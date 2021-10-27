@@ -144,24 +144,24 @@ class GroupMetadataManager(val brokerId: Int,
                         responseCallback: Errors => Unit): Option[DelayedStore] = {
     //根据指定的groupid，获取消费者提交偏移量在__consumer_offset的分区号   Utils.abs(groupId.hashCode) % 50
     val partitionNum = partitionFor(group.groupId)
-    //获取分区magicValueAndTimestamp
+    //获取分区magicValueAndTimestamp   magic = 1
     val magicValueAndTimestampOpt = getMessageFormatVersionAndTimestamp(partitionNum)
     magicValueAndTimestampOpt match {
       case Some((magicValue, timestamp)) =>
-        // 1
+        // groupMetadataValueVersion = 1
         val groupMetadataValueVersion = {
           if (interBrokerProtocolVersion < KAFKA_0_10_1_IV0)
             0.toShort
           else
             GroupMetadataManager.CURRENT_GROUP_VALUE_SCHEMA_VERSION
         }
-
+        //为消息指定键，会确保相同键的所有消息落在同一个broker上
         val message = new Message(
           key = GroupMetadataManager.groupMetadataKey(group.groupId),
           bytes = GroupMetadataManager.groupMetadataValue(group, groupAssignment, version = groupMetadataValueVersion),
           timestamp = timestamp,
           magicValue = magicValue)
-
+        //内部主题  __consumer_offsets
         val groupMetadataPartition = new TopicPartition(Topic.GroupMetadataTopicName, partitionFor(group.groupId))
 
         val groupMetadataMessageSet = Map(groupMetadataPartition ->
@@ -203,22 +203,18 @@ class GroupMetadataManager(val brokerId: Int,
               case Errors.MESSAGE_TOO_LARGE
                    | Errors.RECORD_LIST_TOO_LARGE
                    | Errors.INVALID_FETCH_SIZE =>
-
                 error(s"Appending metadata message for group ${group.groupId} generation $generationId failed due to " +
                   s"${statusError.exceptionName}, returning UNKNOWN error code to the client")
-
                 Errors.UNKNOWN
-
               case other =>
                 error(s"Appending metadata message for group ${group.groupId} generation $generationId failed " +
                   s"due to unexpected error: ${statusError.exceptionName}")
-
                 other
             }
           }
           responseCallback(responseError)
         }
-        // DelayedStore 延迟保存
+        // DelayedStore 延迟存储
         Some(DelayedStore(groupMetadataMessageSet, putCacheCallback))
 
       case None =>
@@ -227,7 +223,7 @@ class GroupMetadataManager(val brokerId: Int,
     }
   }
 
-  //todo 调用副本管理器添加组消息
+  //todo 调用副本管理器添加组消息 内部主题
   def store(delayedStore: DelayedStore) {
     // call replica manager to append the group message
     replicaManager.appendMessages(
@@ -810,12 +806,13 @@ object GroupMetadataManager {
   private val CURRENT_GROUP_VALUE_SCHEMA_VERSION = 1.toShort
 
   private val CURRENT_OFFSET_KEY_SCHEMA = schemaForKey(CURRENT_OFFSET_KEY_SCHEMA_VERSION)
-  private val CURRENT_GROUP_KEY_SCHEMA = schemaForKey(CURRENT_GROUP_KEY_SCHEMA_VERSION)
+  private val CURRENT_GROUP_KEY_SCHEMA: Schema = schemaForKey(CURRENT_GROUP_KEY_SCHEMA_VERSION)
 
   private val CURRENT_OFFSET_VALUE_SCHEMA = schemaForOffset(CURRENT_OFFSET_VALUE_SCHEMA_VERSION)
   private val CURRENT_GROUP_VALUE_SCHEMA = schemaForGroup(CURRENT_GROUP_VALUE_SCHEMA_VERSION)
 
   private def schemaForKey(version: Int) = {
+    // sync组时 version = 2  schemaOpt =GROUP_METADATA_KEY_SCHEMA
     val schemaOpt = MESSAGE_TYPE_SCHEMAS.get(version)
     schemaOpt match {
       case Some(schema) => schema
@@ -862,6 +859,7 @@ object GroupMetadataManager {
    * @return key bytes for group metadata message
    */
   def groupMetadataKey(group: String): Array[Byte] = {
+    // Schema GROUP_METADATA_KEY_SCHEMA
     val key = new Struct(CURRENT_GROUP_KEY_SCHEMA)
     key.set(GROUP_KEY_GROUP_FIELD, group)
 

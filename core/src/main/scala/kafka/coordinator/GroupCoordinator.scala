@@ -244,6 +244,7 @@ class GroupCoordinator(val brokerId: Int,
     } else if (!isCoordinatorForGroup(groupId)) {
       responseCallback(Array.empty, Errors.NOT_COORDINATOR_FOR_GROUP.code)
     } else {
+      //获取组元数据
       groupManager.getGroup(groupId) match {
         case None => responseCallback(Array.empty, Errors.UNKNOWN_MEMBER_ID.code)
         //todo 执行同步组
@@ -284,7 +285,7 @@ class GroupCoordinator(val brokerId: Int,
               val missing = group.allMembers -- groupAssignment.keySet
               //分配结果
               val assignment = groupAssignment ++ missing.map(_ -> Array.empty[Byte]).toMap
-
+              //准备在__consumer_offsets保存分配的结果，防止协调者出现问题需要进行故障迁移，新的  第三个参数 响应结果的回调函数
               delayedGroupStore = groupManager.prepareStoreGroup(group, assignment, (error: Errors) => {
                 group synchronized {
                   // another member may have joined the group while we were awaiting this callback,
@@ -297,6 +298,7 @@ class GroupCoordinator(val brokerId: Int,
                     } else {
                       //todo 传播消费者的分配结果,并持久化到内部主题中
                       setAndPropagateAssignment(group, assignment)
+                      //更新消费者状态为稳定状态
                       group.transitionTo(Stable)
                     }
                   }
@@ -569,6 +571,7 @@ class GroupCoordinator(val brokerId: Int,
 
   private def setAndPropagateAssignment(group: GroupMetadata, assignment: Map[String, Array[Byte]]) {
     assert(group.is(AwaitingSync))
+    //设置每个成员元数据的分配结果
     group.allMemberMetadata.foreach(member => member.assignment = assignment(member.memberId))
     propagateAssignment(group, Errors.NONE)
   }
@@ -747,6 +750,7 @@ class GroupCoordinator(val brokerId: Int,
         group.initNextGeneration()
         if (group.is(Empty)) {
           info(s"Group ${group.groupId} with generation ${group.generationId} is now empty")
+          //延迟存储对象
           delayedStore = groupManager.prepareStoreGroup(group, Map.empty, error => {
             if (error != Errors.NONE) {
               // we failed to write the empty group metadata. If the broker fails before another rebalance,
