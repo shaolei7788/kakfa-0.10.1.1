@@ -142,7 +142,10 @@ class GroupMetadataManager(val brokerId: Int,
   def prepareStoreGroup(group: GroupMetadata,
                         groupAssignment: Map[String, Array[Byte]],
                         responseCallback: Errors => Unit): Option[DelayedStore] = {
-    val magicValueAndTimestampOpt = getMessageFormatVersionAndTimestamp(partitionFor(group.groupId))
+    //根据指定的groupid，获取消费者提交偏移量在__consumer_offset的分区号   Utils.abs(groupId.hashCode) % 50
+    val partitionNum = partitionFor(group.groupId)
+    //获取分区magicValueAndTimestamp
+    val magicValueAndTimestampOpt = getMessageFormatVersionAndTimestamp(partitionNum)
     magicValueAndTimestampOpt match {
       case Some((magicValue, timestamp)) =>
         val groupMetadataValueVersion = {
@@ -215,6 +218,7 @@ class GroupMetadataManager(val brokerId: Int,
 
           responseCallback(responseError)
         }
+        // DelayedStore 延迟保存
         Some(DelayedStore(groupMetadataMessageSet, putCacheCallback))
 
       case None =>
@@ -670,6 +674,7 @@ class GroupMetadataManager(val brokerId: Int,
    * @return  Option[(MessageFormatVersion, TimeStamp)] if replica is local, None otherwise
    */
   private def getMessageFormatVersionAndTimestamp(partition: Int): Option[(Byte, Long)] = {
+    //组元数据分区
     val groupMetadataTopicAndPartition = TopicAndPartition(Topic.GroupMetadataTopicName, partition)
     replicaManager.getMessageFormatVersion(groupMetadataTopicAndPartition).map { messageFormatVersion =>
       val timestamp = {

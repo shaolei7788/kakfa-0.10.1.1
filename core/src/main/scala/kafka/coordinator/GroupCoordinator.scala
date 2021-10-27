@@ -132,6 +132,7 @@ class GroupCoordinator(val brokerId: Int,
     }
   }
 
+  //执行加入组
   private def doJoinGroup(group: GroupMetadata,
                           memberId: String,
                           clientId: String,
@@ -245,25 +246,27 @@ class GroupCoordinator(val brokerId: Int,
     } else {
       groupManager.getGroup(groupId) match {
         case None => responseCallback(Array.empty, Errors.UNKNOWN_MEMBER_ID.code)
-        //todo
+        //todo 执行同步组
         case Some(group) => doSyncGroup(group, generation, memberId, groupAssignment, responseCallback)
       }
     }
   }
 
+  //执行同步组
   private def doSyncGroup(group: GroupMetadata,
                           generationId: Int,
                           memberId: String,
                           groupAssignment: Map[String, Array[Byte]],
                           responseCallback: SyncCallback) {
     var delayedGroupStore: Option[DelayedStore] = None
-
     group synchronized {
       if (!group.has(memberId)) {
+        //组元数据没有该memberId
         responseCallback(Array.empty, Errors.UNKNOWN_MEMBER_ID.code)
       } else if (generationId != group.generationId) {
         responseCallback(Array.empty, Errors.ILLEGAL_GENERATION.code)
       } else {
+        //组的当前状态
         group.currentState match {
           case Empty | Dead =>
             responseCallback(Array.empty, Errors.UNKNOWN_MEMBER_ID.code)
@@ -274,12 +277,10 @@ class GroupCoordinator(val brokerId: Int,
           case AwaitingSync =>
             //设置同步回调函数
             group.get(memberId).awaitingSyncCallback = responseCallback
-
             // if this is the leader, then we can attempt to persist state and transition to stable
-            //主消费者才会执行下面的代码
+            //todo 主消费者才会执行下面的代码
             if (memberId == group.leaderId) {
               info(s"Assignment received from leader for group ${group.groupId} for generation ${group.generationId}")
-
               // fill any missing members with an empty assignment
               val missing = group.allMembers -- groupAssignment.keySet
               val assignment = groupAssignment ++ missing.map(_ -> Array.empty[Byte]).toMap
@@ -572,6 +573,7 @@ class GroupCoordinator(val brokerId: Int,
     propagateAssignment(group, Errors.NONE)
   }
 
+  //重置消费者分区分配的结果并响应错误消息，让消费者重新发送加入组请求
   private def resetAndPropagateAssignmentError(group: GroupMetadata, error: Errors) {
     assert(group.is(AwaitingSync))
     group.allMemberMetadata.foreach(_.assignment = Array.empty[Byte])
@@ -584,7 +586,6 @@ class GroupCoordinator(val brokerId: Int,
       if (member.awaitingSyncCallback != null) {
         member.awaitingSyncCallback(member.assignment, error.code)
         member.awaitingSyncCallback = null
-
         // reset the session timeout for members after propagating the member's assignment.
         // This is because if any member's session expired while we were still awaiting either
         // the leader sync group or the storage callback, its expiration will be ignored and no
@@ -685,6 +686,7 @@ class GroupCoordinator(val brokerId: Int,
     // if any members are awaiting sync, cancel their request and have them rejoin
     //如果有任何成员正在等待同步，取消它们的请求，让它们重新加入消费组
     if (group.is(AwaitingSync)) {
+      ////重置消费者分区分配的结果并响应错误消息，让消费者重新发送加入组请求
       resetAndPropagateAssignmentError(group, Errors.REBALANCE_IN_PROGRESS)
     }
     //状态改变为准备再平衡

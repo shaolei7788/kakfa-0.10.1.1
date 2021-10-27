@@ -1138,7 +1138,7 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
     import JavaConversions._
 
     val syncGroupRequest = request.body.asInstanceOf[SyncGroupRequest]
-
+    //响应回调
     def sendResponseCallback(memberState: Array[Byte], errorCode: Short) {
       val responseBody = new SyncGroupResponse(errorCode, ByteBuffer.wrap(memberState))
       val responseHeader = new ResponseHeader(request.header.correlationId)
@@ -1148,6 +1148,7 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
     if (!authorize(request.session, Read, new Resource(Group, syncGroupRequest.groupId()))) {
       sendResponseCallback(Array[Byte](), Errors.GROUP_AUTHORIZATION_FAILED.code)
     } else {
+      //处理同步
       coordinator.handleSyncGroup(
         syncGroupRequest.groupId(),
         syncGroupRequest.generationId(),
