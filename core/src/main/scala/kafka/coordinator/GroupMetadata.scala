@@ -165,9 +165,9 @@ private[coordinator] class GroupMetadata(val groupId: String, initialState: Grou
   def get(memberId: String) = members(memberId)
 
   def add(memberId: String, member: MemberMetadata) {
-    if (members.isEmpty)
+    if (members.isEmpty) {
       this.protocolType = Some(member.protocolType)
-
+    }
     assert(groupId == member.groupId)
     assert(this.protocolType.orNull == member.protocolType)
     assert(supportsProtocols(member.protocols))

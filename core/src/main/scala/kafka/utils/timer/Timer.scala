@@ -81,6 +81,7 @@ class SystemTimer(executorName: String,// Purgatory 的名字
   private[this] val taskCounter = new AtomicInteger(0)
 
   //时间轮  startMs 时间轮被创建的起始时间
+  //SystemTimer定时器只持有第一层时间轮，第一层时间轮持有第二层时间轮，以此类推
   private[this] val timingWheel = new TimingWheel(
     tickMs = tickMs,
     wheelSize = wheelSize,
@@ -125,14 +126,13 @@ class SystemTimer(executorName: String,// Purgatory 的名字
   def advanceClock(timeoutMs: Long): Boolean = {
     //只会弹出超时的定时任务列表，队列中的每个元素按照时间排序
     //从延迟队列中取出最近的一个槽，如果槽的expireTime没到，此操作会阻塞timeoutMs
-    var bucket = delayQueue.poll(timeoutMs, TimeUnit.MILLISECONDS)
+    var bucket: TimerTaskList = delayQueue.poll(timeoutMs, TimeUnit.MILLISECONDS)
     if (bucket != null) {
-      // 获取写锁
-      // 一旦有线程持有写锁，其他任何线程执行add或advanceClock方法时会阻塞
+      // 获取写锁，一旦有线程持有写锁，其他任何线程执行add或advanceClock方法时会阻塞
       writeLock.lock()
       try {
         while (bucket != null) {
-          // 推动时间轮向前"滚动"到Bucket的过期时间点
+          // 推动时间轮向前"滚动"到Bucket的过期时间点  也就是更新当前时间
           timingWheel.advanceClock(bucket.getExpiration())
           //将该Bucket下的所有定时任务重写回到时间轮
           bucket.flush(reinsert)

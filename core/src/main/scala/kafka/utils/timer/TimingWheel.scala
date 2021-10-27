@@ -96,9 +96,34 @@ import java.util.concurrent.atomic.AtomicInteger
  * This class is not thread-safe. There should not be any add calls while advanceClock is executing.
  * It is caller's responsibility to enforce it. Simultaneous add calls are thread-safe.
  */
+
+/*
+时间      时间      桶位置
+0					0
+1			  [20,40)     1
+2			  [40,60)     2
+3			  [60,80)     3
+4			  [80,100)    4
+5			  [100,120)   5
+6			  [120,140)   6
+7			  [140,160)   7
+8			  [160,180)   8
+9			  [180,200)   9
+10			[200,220)   10
+11			[220,240)   11
+12			[240,260)   12
+13			[260,280)   13
+14			[280,300)   14
+15			[300,320)   15
+16			[320,340)   16
+17			[340,360)   17
+18			[360,380)   18
+19			[380,400)   19
+ */
+
 // tickMs 表示一个槽所代表的时间范围，默认1ms
 // wheelSize 表示该时间轮有多少个槽，默认值是20  不会变 其它几个属性都会变
-// startMs：表示该时间轮的开始时间
+// startMs：表示该时间轮的创建时间
 // taskCounter：表示该时间轮的任务总数
 // queue：是一个TimerTaskList的延迟队列。每个槽都有它一个对应的TimerTaskList，
 //  TimerTaskList是一个双向链表，有一个expireTime的值，这些TimerTaskList都被加到这个延迟队列中，
@@ -118,6 +143,7 @@ private[timer] class TimingWheel(tickMs: Long, wheelSize: Int, startMs: Long, ta
 
   // overflowWheel can potentially be updated and read by two concurrent threads through add().
   // Therefore, it needs to be volatile due to the issue of Double-Checked Locking pattern with JVM
+  //上层时间轮
   @volatile private[this] var overflowWheel: TimingWheel = null
 
   //创建更高层的时间轮，低层时间轮的interval作为高层时间轮的tickMs
@@ -194,7 +220,9 @@ private[timer] class TimingWheel(tickMs: Long, wheelSize: Int, startMs: Long, ta
       currentTime = timeMs - (timeMs % tickMs)
       // Try to advance the clock of the overflow wheel if present
       // 同时尝试为上一层时间轮做向前推进动作
-      if (overflowWheel != null) overflowWheel.advanceClock(currentTime)
+      if (overflowWheel != null) {
+        overflowWheel.advanceClock(currentTime)
+      }
     }
   }
 }

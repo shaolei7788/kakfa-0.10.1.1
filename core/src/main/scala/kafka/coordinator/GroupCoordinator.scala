@@ -122,7 +122,7 @@ class GroupCoordinator(val brokerId: Int,
           } else {
             //发送JoinGroupRequest memberId = "" 将GroupMetadata加入groupManager
             val group = groupManager.addGroup(new GroupMetadata(groupId))
-            //todo 进行leader consumer选举
+            //todo 执行加入组  进行leader consumer选举
             doJoinGroup(group, memberId, clientId, clientHost, rebalanceTimeoutMs, sessionTimeoutMs, protocolType, protocols, responseCallback)
           }
         //消费组元数据存在
@@ -141,6 +141,8 @@ class GroupCoordinator(val brokerId: Int,
                           protocolType: String,
                           protocols: List[(String, Array[Byte])],
                           responseCallback: JoinCallback) {
+    // 协调者处理第一个消费者的加入组请求一直到返回加入组响应给消费者，都是在同一个锁中完成的
+    // 协调者处理消费者的同步组请求到返回同步组请求给消费者的过程中，则不在同一个锁中
     //todo 加锁了  协调者不会处理其它消费者发送加入组请求
     group synchronized {
       if (!group.is(Empty) && (group.protocolType != Some(protocolType) || !group.supportsProtocols(protocols.map(_._1).toSet))) {
@@ -222,9 +224,10 @@ class GroupCoordinator(val brokerId: Int,
               }
             }
         }
-
-        if (group.is(PreparingRebalance))
+        //组正在准备平衡
+        if (group.is(PreparingRebalance)) {
           joinPurgatory.checkAndComplete(GroupKey(group.groupId))
+        }
       }
     }
   }
@@ -641,8 +644,9 @@ class GroupCoordinator(val brokerId: Int,
     val memberId = clientId + "-" + group.generateMemberIdSuffix
     val member = new MemberMetadata(memberId, group.groupId, clientId, clientHost, rebalanceTimeoutMs,
       sessionTimeoutMs, protocolType, protocols)
+    //todo 将回调函数赋给成员遍历
     member.awaitingJoinCallback = callback
-    //加入group,并选从leader
+    //加入group,并选举leader 谁第一个来注册谁就是leader
     group.add(member.memberId, member)
     //加入新成员可能需要再平衡
     maybePrepareRebalance(group)
@@ -668,17 +672,20 @@ class GroupCoordinator(val brokerId: Int,
   //添加或更新消费者的成员元数据都可以执行这个方法
   private def maybePrepareRebalance(group: GroupMetadata) {
     group synchronized {
-      //状态为等待同步或稳定时
-      if (group.canRebalance)
+      //状态为等待同步或稳定时或空  PreparingRebalance -> Set(Stable, AwaitingSync, Empty)
+      if (group.canRebalance) {
         prepareRebalance(group)
+      }
     }
   }
 
+  //只要是执行准备再平衡就会创建延迟加入操作
   private def prepareRebalance(group: GroupMetadata) {
     // if any members are awaiting sync, cancel their request and have them rejoin
     //如果有任何成员正在等待同步，取消它们的请求，让它们重新加入消费组
-    if (group.is(AwaitingSync))
+    if (group.is(AwaitingSync)) {
       resetAndPropagateAssignmentError(group, Errors.REBALANCE_IN_PROGRESS)
+    }
     //状态改变为准备再平衡
     group.transitionTo(PreparingRebalance)
     info("Preparing to restabilize group %s with old generation %s".format(group.groupId, group.generationId))
@@ -712,10 +719,10 @@ class GroupCoordinator(val brokerId: Int,
   //尝试完成延迟的加入操作，如果条件满足，能够完成，就调用forceComplete回调方法
   def tryCompleteJoin(group: GroupMetadata, forceComplete: () => Boolean) = {
     group synchronized {
-      //判断条件
-      if (group.notYetRejoinedMembers.isEmpty)
+      //判断条件  只要有一个 Member.awaitingJoinCallback  == null   forceComplete 就不能执行
+      if (group.notYetRejoinedMembers.isEmpty) {
         forceComplete()
-      else false
+      } else false
     }
   }
 
@@ -761,8 +768,9 @@ class GroupCoordinator(val brokerId: Int,
               subProtocol=group.protocol,
               leaderId=group.leaderId,
               errorCode=Errors.NONE.code)
-            //调用回调函数  即 sendResponseCallback
+            //todo 调用回调函数  即 sendResponseCallback
             member.awaitingJoinCallback(joinResult)
+            //置空操作
             member.awaitingJoinCallback = null
             //完成并执行下一次心跳
             completeAndScheduleNextHeartbeatExpiration(group, member)

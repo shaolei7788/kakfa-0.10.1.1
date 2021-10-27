@@ -165,9 +165,10 @@ class DelayedOperationPurgatory[T <: DelayedOperation](purgatoryName: String,
     },
     metricsTags
   )
-
-  if (reaperEnabled)
+  //表示是否启动删除线程
+  if (reaperEnabled) {
     expirationReaper.start()
+  }
 
   /**
    * Check if the operation can be completed, if not watch it based on the given watch keys
@@ -359,10 +360,9 @@ class DelayedOperationPurgatory[T <: DelayedOperation](purgatoryName: String,
           purged += 1
         }
       }
-
-      if (operations.isEmpty)
+      if (operations.isEmpty) {
         removeKeyIfEmpty(key, this)
-
+      }
       purged
     }
   }
@@ -396,6 +396,7 @@ class DelayedOperationPurgatory[T <: DelayedOperation](purgatoryName: String,
     "ExpirationReaper-%d".format(brokerId),
     false) {
 
+    //被run方法不断调用
     override def doWork() {
       //todo 用于将已过期的延迟请求从数据结构中移除掉
       advanceClock(200L)

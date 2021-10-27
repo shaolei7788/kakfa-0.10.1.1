@@ -37,9 +37,10 @@ trait TimerTask extends Runnable {
     synchronized {
       // if this timerTask is already held by an existing timer task entry,
       // we will remove such an entry first.
-      if (timerTaskEntry != null && timerTaskEntry != entry)
+      if (timerTaskEntry != null && timerTaskEntry != entry) {
         timerTaskEntry.remove()
-
+      }
+      //赋值操作
       timerTaskEntry = entry
     }
   }

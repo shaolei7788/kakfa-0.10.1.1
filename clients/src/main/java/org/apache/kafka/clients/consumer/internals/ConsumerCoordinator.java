@@ -271,7 +271,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
             if (subscriptions.hasPatternSubscription()) {
                 client.ensureFreshMetadata();
             }
-            //todo 确保group is active
+            //todo 确保group is active  可能会发送加入组请求
             ensureActiveGroup();
             now = time.milliseconds();
         }

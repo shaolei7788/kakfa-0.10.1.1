@@ -50,6 +50,8 @@ public class Consumer extends Thread{
     }
 
     public void run(){
+        // 消费者再平衡监听器
+        //consumer.subscribe(Pattern pattern, ConsumerRebalanceListener listener)
         consumer.subscribe(Collections.singletonList(this.topic));
         ConsumerRecords<Integer, String> records = consumer.poll(1000);
         for (ConsumerRecord<Integer, String> record : records) {
