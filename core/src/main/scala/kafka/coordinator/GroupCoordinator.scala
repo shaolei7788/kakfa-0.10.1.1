@@ -273,7 +273,6 @@ class GroupCoordinator(val brokerId: Int,
 
           case PreparingRebalance =>
             responseCallback(Array.empty, Errors.REBALANCE_IN_PROGRESS.code)
-
           case AwaitingSync =>
             //设置同步回调函数
             group.get(memberId).awaitingSyncCallback = responseCallback
