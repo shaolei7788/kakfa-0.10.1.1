@@ -148,6 +148,7 @@ class GroupMetadataManager(val brokerId: Int,
     val magicValueAndTimestampOpt = getMessageFormatVersionAndTimestamp(partitionNum)
     magicValueAndTimestampOpt match {
       case Some((magicValue, timestamp)) =>
+        // 1
         val groupMetadataValueVersion = {
           if (interBrokerProtocolVersion < KAFKA_0_10_1_IV0)
             0.toShort
@@ -215,7 +216,6 @@ class GroupMetadataManager(val brokerId: Int,
                 other
             }
           }
-
           responseCallback(responseError)
         }
         // DelayedStore 延迟保存
@@ -902,13 +902,18 @@ object GroupMetadataManager {
   def groupMetadataValue(groupMetadata: GroupMetadata,
                          assignment: Map[String, Array[Byte]],
                          version: Short = 0): Array[Byte] = {
-    val value = if (version == 0) new Struct(GROUP_METADATA_VALUE_SCHEMA_V0) else new Struct(CURRENT_GROUP_VALUE_SCHEMA)
-
+    val value: Struct = if (version == 0) {
+      new Struct(GROUP_METADATA_VALUE_SCHEMA_V0)
+    }else {
+      //
+      new Struct(CURRENT_GROUP_VALUE_SCHEMA)
+    }
     value.set(PROTOCOL_TYPE_KEY, groupMetadata.protocolType.getOrElse(""))
     value.set(GENERATION_KEY, groupMetadata.generationId)
     value.set(PROTOCOL_KEY, groupMetadata.protocol)
     value.set(LEADER_KEY, groupMetadata.leaderId)
 
+    //groupMetadata.allMemberMetadata = List(MemberMetadata)
     val memberArray = groupMetadata.allMemberMetadata.map {
       case memberMetadata =>
         val memberStruct = value.instance(MEMBERS_KEY)
@@ -922,12 +927,11 @@ object GroupMetadataManager {
 
         val metadata = memberMetadata.metadata(groupMetadata.protocol)
         memberStruct.set(SUBSCRIPTION_KEY, ByteBuffer.wrap(metadata))
-
+        //分配的结果
         val memberAssignment = assignment(memberMetadata.memberId)
         assert(memberAssignment != null)
 
         memberStruct.set(ASSIGNMENT_KEY, ByteBuffer.wrap(memberAssignment))
-
         memberStruct
     }
 

@@ -283,6 +283,7 @@ class GroupCoordinator(val brokerId: Int,
               info(s"Assignment received from leader for group ${group.groupId} for generation ${group.generationId}")
               // fill any missing members with an empty assignment
               val missing = group.allMembers -- groupAssignment.keySet
+              //分配结果
               val assignment = groupAssignment ++ missing.map(_ -> Array.empty[Byte]).toMap
 
               delayedGroupStore = groupManager.prepareStoreGroup(group, assignment, (error: Errors) => {
