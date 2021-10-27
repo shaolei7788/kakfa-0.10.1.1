@@ -284,7 +284,6 @@ class GroupCoordinator(val brokerId: Int,
               val missing = group.allMembers -- groupAssignment.keySet
               //分配结果
               val assignment = groupAssignment ++ missing.map(_ -> Array.empty[Byte]).toMap
-
               delayedGroupStore = groupManager.prepareStoreGroup(group, assignment, (error: Errors) => {
                 group synchronized {
                   // another member may have joined the group while we were awaiting this callback,
