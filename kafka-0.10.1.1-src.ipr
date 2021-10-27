@@ -13,7 +13,20 @@
       <entry name="!?*.groovy"/>
     </wildcardResourcePatterns>
     <annotationProcessing enabled="false" useClasspath="true"/>
-    <bytecodeTargetLevel target="1.7"/>
+    <bytecodeTargetLevel target="1.8">
+      <module name="clients" target="1.8"/>
+      <module name="connect" target="1.8"/>
+      <module name="core" target="1.8"/>
+      <module name="kafka-0.10.1.1-src-examples" target="1.8"/>
+      <module name="log4j-appender" target="1.8"/>
+      <module name="streams" target="1.8"/>
+      <module name="tools" target="1.8"/>
+      <module name="api" target="1.8"/>
+      <module name="file" target="1.8"/>
+      <module name="json" target="1.8"/>
+      <module name="runtime" target="1.8"/>
+      <module name="streams-examples" target="1.8"/>
+    </bytecodeTargetLevel>
   </component>
   <component name="CopyrightManager" default="">
     <module2copyright/>
@@ -63,7 +76,7 @@
       <module filepath="$PROJECT_DIR$/streams/examples/streams-examples.iml" fileurl="file://$PROJECT_DIR$/streams/examples/streams-examples.iml"/>
     </modules>
   </component>
-  <component name="ProjectRootManager" version="2" languageLevel="JDK_1_7" assert-keyword="true" jdk-15="true" project-jdk-type="JavaSDK" assert-jdk-15="true" project-jdk-name="1.8">
+  <component name="ProjectRootManager" version="2" languageLevel="JDK_1_8" assert-keyword="true" jdk-15="true" project-jdk-type="JavaSDK" assert-jdk-15="true" project-jdk-name="1.8">
     <output url="file://$PROJECT_DIR$/out"/>
   </component>
   <component name="SvnBranchConfigurationManager">
@@ -114,15 +127,17 @@
     </states>
   </component>
   <component name="libraryTable">
-    <library name="scala-sdk-2.10.6" type="Scala">
+    <library name="scala-sdk-2.11.8" type="Scala">
       <CLASSES/>
       <JAVADOC/>
       <SOURCES/>
       <properties>
         <compiler-classpath>
-          <root url="file://C:/Users/Administrator/.gradle/caches/modules-2/files-2.1/org.scala-lang/scala-compiler/2.10.6/9b15174852f5b6bb1edbf303d5722286a0a54011/scala-compiler-2.10.6.jar"/>
-          <root url="file://C:/Users/Administrator/.gradle/caches/modules-2/files-2.1/org.scala-lang/scala-library/2.10.6/421989aa8f95a05a4f894630aad96b8c7b828732/scala-library-2.10.6.jar"/>
-          <root url="file://C:/Users/Administrator/.gradle/caches/modules-2/files-2.1/org.scala-lang/scala-reflect/2.10.6/3259f3df0f166f017ef5b2d385445808398c316c/scala-reflect-2.10.6.jar"/>
+          <root url="file://C:/Users/shaolei/.gradle/caches/modules-2/files-2.1/org.scala-lang/scala-compiler/2.11.8/fe1285c9f7b58954c5ef6d80b59063569c065e9a/scala-compiler-2.11.8.jar"/>
+          <root url="file://C:/Users/shaolei/.gradle/caches/modules-2/files-2.1/org.scala-lang/scala-library/2.11.8/ddd5a8bced249bedd86fb4578a39b9fb71480573/scala-library-2.11.8.jar"/>
+          <root url="file://C:/Users/shaolei/.gradle/caches/modules-2/files-2.1/org.scala-lang/scala-reflect/2.11.8/b74530deeba742ab4f3134de0c2da0edc49ca361/scala-reflect-2.11.8.jar"/>
+          <root url="file://C:/Users/shaolei/.gradle/caches/modules-2/files-2.1/org.scala-lang.modules/scala-xml_2.11/1.0.4/b67c76af885ba3323ce51bbed4c9232f4bd5d8fd/scala-xml_2.11-1.0.4.jar"/>
+          <root url="file://C:/Users/shaolei/.gradle/caches/modules-2/files-2.1/org.scala-lang.modules/scala-parser-combinators_2.11/1.0.4/7369d653bcfa95d321994660477a4d7e81d7f490/scala-parser-combinators_2.11-1.0.4.jar"/>
         </compiler-classpath>
       </properties>
     </library>
