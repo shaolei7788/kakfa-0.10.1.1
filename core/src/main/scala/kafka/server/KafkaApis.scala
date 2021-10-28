@@ -1060,7 +1060,6 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
   def handleDescribeGroupRequest(request: RequestChannel.Request) {
     val describeRequest = request.body.asInstanceOf[DescribeGroupsRequest]
     val responseHeader = new ResponseHeader(request.header.correlationId)
-
     val groups = describeRequest.groupIds().asScala.map {
       case groupId =>
         if (!authorize(request.session, Describe, new Resource(Group, groupId))) {
