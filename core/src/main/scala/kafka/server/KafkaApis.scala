@@ -1076,7 +1076,6 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
             summary.protocol, members.asJava)
         }
     }.toMap
-
     val responseBody = new DescribeGroupsResponse(groups.asJava)
     requestChannel.sendResponse(new RequestChannel.Response(request, new ResponseSend(request.connectionId, responseHeader, responseBody)))
   }
