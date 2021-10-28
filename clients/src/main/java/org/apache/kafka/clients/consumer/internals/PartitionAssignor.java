@@ -69,6 +69,7 @@ public interface PartitionAssignor {
     String name();
 
     class Subscription {
+
         private final List<String> topics;
         private final ByteBuffer userData;
 

@@ -37,7 +37,7 @@ public class Producer {
 
     public Producer(String topic, Boolean isAsync) {
         Properties props = new Properties();
-        props.put("bootstrap.servers", "hadoop5:9092");
+        props.put("bootstrap.servers", "localhost:9092");
         props.put("client.id", "DemoProducer");
         //必须要指定
         props.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");

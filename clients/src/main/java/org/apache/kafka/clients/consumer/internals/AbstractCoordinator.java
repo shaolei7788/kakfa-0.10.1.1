@@ -47,7 +47,6 @@ import org.apache.kafka.common.requests.SyncGroupResponse;
 import org.apache.kafka.common.utils.Time;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import java.io.Closeable;
 import java.nio.ByteBuffer;
 import java.util.Collections;
@@ -196,7 +195,6 @@ public abstract class AbstractCoordinator implements Closeable {
             //todo client = ConsumerNetworkClient 真正的发送网络请求
             // 阻塞发送GroupCoordinatorRequest 在一个while循环里 阻塞式获取GroupCoordinator
             client.poll(future);
-
             if (future.failed()) {
                 //异常处理
                 if (future.isRetriable()){
@@ -221,12 +219,11 @@ public abstract class AbstractCoordinator implements Closeable {
             //todo 查找集群负载最低的一个node 通过查找inFlightRequests 中未确认请求最少的的节点
             Node node = this.client.leastLoadedNode();
             if (node == null) {
-                // TODO: If there are no brokers left, perhaps we should use the bootstrap set
-                // from configuration?
                 return RequestFuture.noBrokersAvailable();
-            } else
-                //todo
+            } else {
+                //发送查找组协调者请求
                 findCoordinatorFuture = sendGroupCoordinatorRequest(node);
+            }
         }
         return findCoordinatorFuture;
     }
@@ -318,7 +315,7 @@ public abstract class AbstractCoordinator implements Closeable {
                 //todo 发送JoinGroupRequest请求之前的准备 做了三件事情
                 // 1 如果开启了自动提交偏移量则进行同步提交偏移量
                 // 2 调用注册在SubscriptionState 中的 ConsumerRebalanceListener 回调方法
-                // 3 resetGroupSubscription
+                // 3 resetGroupSubscription  重置消费者组订阅的主题
                 onJoinPrepare(generation.generationId, generation.memberId);
                 needsJoinPrepare = false;
             }
@@ -328,7 +325,6 @@ public abstract class AbstractCoordinator implements Closeable {
             client.poll(future);
             //将 joinFuture = null
             resetJoinGroupFuture();
-
             //加入group成功
             if (future.succeeded()) {
                 needsJoinPrepare = true;
@@ -413,6 +409,7 @@ public abstract class AbstractCoordinator implements Closeable {
                 this.rebalanceTimeoutMs,
                 this.generation.memberId,
                 protocolType(),//Consumer Group实现的协议 ，默认是consumer
+                //协议元数据信息
                 metadata());
 
         log.debug("Sending JoinGroup ({}) to coordinator {}", request, this.coordinator);
@@ -577,7 +574,6 @@ public abstract class AbstractCoordinator implements Closeable {
         //todo GroupCoordinatorResponseHandler 是一个适配器类
         RequestFuture<Void> compose = send.compose(new GroupCoordinatorResponseHandler());
         return compose ;
-
     }
 
     //请求GroupCoordinator的回调对象

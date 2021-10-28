@@ -20,6 +20,7 @@ import java.io.Serializable;
  * node made the commit, what time the commit was made, etc.
  */
 public class OffsetAndMetadata implements Serializable {
+
     private final long offset;
     private final String metadata;
 

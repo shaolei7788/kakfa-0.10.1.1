@@ -728,6 +728,7 @@ class ZkUtils(val zkClient: ZkClient,
   def getPartitionAssignmentForTopics(topics: Seq[String]): mutable.Map[String, collection.Map[Int, Seq[Int]]] = {
     val ret = new mutable.HashMap[String, Map[Int, Seq[Int]]]()
     topics.foreach{ topic =>
+      // path = /brokers/topics
       val jsonPartitionMapOpt = readDataMaybeNull(getTopicPath(topic))._1
       val partitionMap = jsonPartitionMapOpt match {
         case Some(jsonPartitionMap) =>

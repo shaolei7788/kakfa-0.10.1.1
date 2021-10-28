@@ -64,11 +64,12 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 public final class ConsumerCoordinator extends AbstractCoordinator {
 
     private static final Logger log = LoggerFactory.getLogger(ConsumerCoordinator.class);
-    //分区分配器
+    //默认是分区分配器
     private final List<PartitionAssignor> assignors;
     //集群元数据信息
     private final Metadata metadata;
     private final ConsumerCoordinatorMetrics sensors;
+    //消费者订阅状态
     private final SubscriptionState subscriptions;
     private final OffsetCommitCallback defaultOffsetCommitCallback;
     //是否自动提交偏移量
@@ -146,10 +147,12 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
 
     @Override
     public List<ProtocolMetadata> metadata() {
+        //消费者订阅的主题
         this.joinedSubscription = subscriptions.subscription();
         List<ProtocolMetadata> metadataList = new ArrayList<>();
+        //默认是分区分配器
         for (PartitionAssignor assignor : assignors) {
-            //创建了一个订阅状态，包含了消费者订阅的topic列表
+            //创建了一个订阅信息，包含了消费者订阅的topic列表
             Subscription subscription = assignor.subscription(joinedSubscription);
             ByteBuffer metadata = ConsumerProtocol.serializeSubscription(subscription);
             //每个分区分配器的元数据实际上都是一样的
@@ -264,9 +267,6 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
 
         //判断是否需要加入group
         if (needRejoin()) {
-            // due to a race condition between the initial metadata fetch and the initial rebalance,
-            // we need to ensure that the metadata is fresh before joining initially. This ensures
-            // that we have matched the pattern against the cluster's topics at least once before joining.
             //消费者有正则表达式订阅类型
             if (subscriptions.hasPatternSubscription()) {
                 client.ensureFreshMetadata();
@@ -345,7 +345,6 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
         // commit offsets prior to rebalance if auto-commit enabled
         //同步提交偏移量
         maybeAutoCommitOffsetsSync();
-
         // execute the user's callback before rebalance
         // subscriptions = SubscriptionState
         //消费者再平衡监听器
@@ -363,6 +362,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
         }
 
         isLeader = false;
+        //重置消费者组订阅的主题
         subscriptions.resetGroupSubscription();
     }
 

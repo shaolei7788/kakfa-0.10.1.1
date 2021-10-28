@@ -1039,7 +1039,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
         //todo
         // 1 确保连接GroupCoordinator
         // 2 发送加入group请求 ApiKeys.JOIN_GROUP 里面有个回调函数 响应信息会返回那个是leader consumer
-        // 3 发送同步group请求 ApiKeys.SYNC_GROUP 里面有个回调函数 leader会制定分区分配策略并发送给GroupCoordinator
+        // 3 发送同步group请求 ApiKeys.SYNC_GROUP 里面有个回调函数 leader会制定分区分配策略并发送给GroupCoordinator  分配需要拉取的分区信息
         // 4 可能会异步提交偏移量
         coordinator.poll(time.milliseconds());
 
@@ -1561,11 +1561,9 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
         // the user is manually assigning partitions and managing their own offsets).
         //todo 判断是否需要重置偏移量
         fetcher.resetOffsetsIfNeeded(partitions);
-
         //todo 再次判断是否所有的分区都存在有效的拉取偏移量
         if (!subscriptions.hasAllFetchPositions()) {
             //todo 1 协调者没有记录分区的提交偏移量时， 2 才会从分区的主副本节点获取偏移量
-
             //todo 1 如果有必要，更新提交偏移量
             coordinator.refreshCommittedOffsetsIfNeeded();
             //todo 2 更新分区的拉取偏移量

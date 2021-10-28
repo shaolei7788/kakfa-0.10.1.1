@@ -44,8 +44,11 @@ public class JoinGroupRequest extends AbstractRequest {
     private final String protocolType;
     private final List<ProtocolMetadata> groupProtocols;
 
+    //协议元数据
     public static class ProtocolMetadata {
+        //分区分配器的名称  range
         private final String name;
+        //订阅的所有主题的序列化后的字节缓冲区
         private final ByteBuffer metadata;
 
         public ProtocolMetadata(String name, ByteBuffer metadata) {

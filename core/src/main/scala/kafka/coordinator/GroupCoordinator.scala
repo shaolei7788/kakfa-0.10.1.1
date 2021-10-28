@@ -484,15 +484,16 @@ class GroupCoordinator(val brokerId: Int,
       partitions.map { case topicPartition =>
         (topicPartition, new OffsetFetchResponse.PartitionData(OffsetFetchResponse.INVALID_OFFSET, "", Errors.GROUP_COORDINATOR_NOT_AVAILABLE.code))}.toMap
     } else if (!isCoordinatorForGroup(groupId)) {
+      // 检测GroupCoordinator是否是消费者组的管理者
       debug("Could not fetch offsets for group %s (not group coordinator).".format(groupId))
       partitions.map { case topicPartition =>
         (topicPartition, new OffsetFetchResponse.PartitionData(OffsetFetchResponse.INVALID_OFFSET, "", Errors.NOT_COORDINATOR_FOR_GROUP.code))}.toMap
     } else if (isCoordinatorLoadingInProgress(groupId)) {
+      // 检测GroupMetadata是否已经完成
       partitions.map { case topicPartition =>
         (topicPartition, new OffsetFetchResponse.PartitionData(OffsetFetchResponse.INVALID_OFFSET, "", Errors.GROUP_LOAD_IN_PROGRESS.code))}.toMap
     } else {
-      // return offsets blindly regardless the current group state since the group may be using
-      // Kafka commit storage without automatic group management
+      //交给GroupMetadataManager处理
       groupManager.getOffsets(groupId, partitions)
     }
   }

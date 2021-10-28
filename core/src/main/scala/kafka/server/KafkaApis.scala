@@ -145,23 +145,27 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
     // stop serving data to clients for the topic being deleted
     // correlationId 是递增的一个数字
     val correlationId = request.header.correlationId
+    // 将请求转换成LeaderAndIsrRequest
     val leaderAndIsrRequest = request.body.asInstanceOf[LeaderAndIsrRequest]
-
     try {
       //回调函数
       def onLeadershipChange(updatedLeaders: Iterable[Partition], updatedFollowers: Iterable[Partition]) {
-        // for each new leader or follower, call coordinator to handle consumer group migration.
-        // this callback is invoked under the replica state change lock to ensure proper order of
-        // leadership changes
+        // 遍历更新的partition leader
         updatedLeaders.foreach { partition =>
+          // 如果是内部主题
           if (partition.topic == Topic.GroupMetadataTopicName) {
-            //__consumer_offsets
+            //__consumer_offsets    Immigration移民  由外向内迁徙
+            // 当broker成为内部主题分区的leader副本的时候
             coordinator.handleGroupImmigration(partition.partitionId)
           }
         }
+        // 遍历更新的partition followers
         updatedFollowers.foreach { partition =>
-          if (partition.topic == Topic.GroupMetadataTopicName)
+          if (partition.topic == Topic.GroupMetadataTopicName) {
+            // 如果是内部主题   emigration由内向外
+            // 当broker成为内部主题分区的follower副本的时候
             coordinator.handleGroupEmigration(partition.partitionId)
+          }
         }
       }
 
@@ -825,12 +829,16 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
   }
 
   private def createGroupMetadataTopic(): MetadataResponse.TopicMetadata = {
+    //活着的broker
     val aliveBrokers = metadataCache.getAliveBrokers
+    //取 活着的broker个数跟3 的最小值 作为内部主题的副本数
     val offsetsTopicReplicationFactor =
-      if (aliveBrokers.nonEmpty)
+      if (aliveBrokers.nonEmpty) {
         Math.min(config.offsetsTopicReplicationFactor.toInt, aliveBrokers.length)
-      else
+      } else {
         config.offsetsTopicReplicationFactor.toInt
+      }
+    //创建内部主题，默认情况下，offsets topic有50个分区，3个副本
     createTopic(Topic.GroupMetadataTopicName, config.offsetsTopicPartitions,
       offsetsTopicReplicationFactor, coordinator.offsetsTopicConfigs)
   }
@@ -849,10 +857,13 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
       //不存在的topic响应
       val responsesForNonExistentTopics = nonExistentTopics.map { topic =>
         if (topic == Topic.GroupMetadataTopicName) {
+          //创建内部主题
           createGroupMetadataTopic()
         } else if (config.autoCreateTopicsEnable) {
+          //开启了自动创建topic
           createTopic(topic, config.numPartitions, config.defaultReplicationFactor)
         } else {
+          //未知的topic
           new MetadataResponse.TopicMetadata(Errors.UNKNOWN_TOPIC_OR_PARTITION, topic, false,
             java.util.Collections.emptyList())
         }
@@ -922,6 +933,7 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
     // In version 0, we returned an error when brokers with replicas were unavailable,
     // while in higher versions we simply don't include the broker in the returned broker list
     val errorUnavailableEndpoints = requestVersion == 0
+    //topic元数据信息
     val topicMetadata: Seq[MetadataResponse.TopicMetadata] =
       if (authorizedTopics.isEmpty)
         Seq.empty[MetadataResponse.TopicMetadata]
@@ -1011,6 +1023,7 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
   }
 
   def handleGroupCoordinatorRequest(request: RequestChannel.Request) {
+    // 将请求转换成GroupCoordinatorRequest
     val groupCoordinatorRequest = request.body.asInstanceOf[GroupCoordinatorRequest]
     val responseHeader = new ResponseHeader(request.header.correlationId)
 
@@ -1018,19 +1031,15 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
       val responseBody = new GroupCoordinatorResponse(Errors.GROUP_AUTHORIZATION_FAILED.code, Node.noNode)
       requestChannel.sendResponse(new RequestChannel.Response(request, new ResponseSend(request.connectionId, responseHeader, responseBody)))
     } else {
-      // 通过对 partition = hash(groupId) % 50  找到对应分区对应 __consumer_offsets-partition 的leader,返回该node
-
-
-      //todo 通过groupid 获取 partition = hash(groupId) % 50
+      //找到内部主题分区 partition = groupId.hashcode % 50
       val partition: Int = coordinator.partitionFor(groupCoordinatorRequest.groupId)
-
-      // 主题元数据
+      // 内部主题元数据
       val offsetsTopicMetadata : MetadataResponse.TopicMetadata = getOrCreateGroupMetadataTopic(request.securityProtocol)
 
       val responseBody = if (offsetsTopicMetadata.error != Errors.NONE) {
         new GroupCoordinatorResponse(Errors.GROUP_COORDINATOR_NOT_AVAILABLE.code, Node.noNode)
       } else {
-        // PartitionMetadata
+        // 找到分区对应的leader所在的broker,即是组协调者
         val coordinatorEndpoint : Option[Node] = offsetsTopicMetadata.partitionMetadata().asScala
           .find(_.partition == partition)
           .map(_.leader())
@@ -1045,7 +1054,7 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
       }
 
       trace("Sending consumer metadata %s for correlation id %d to client %s.".format(responseBody, request.header.correlationId, request.header.clientId))
-      //发送响应信息
+      // 放入响应队列，等待被发送
       requestChannel.sendResponse(new RequestChannel.Response(request, new ResponseSend(request.connectionId, responseHeader, responseBody)))
     }
   }

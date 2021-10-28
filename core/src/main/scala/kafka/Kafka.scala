@@ -60,6 +60,7 @@ object Kafka extends Logging {
 
       kafkaServerStartable.startup
       kafkaServerStartable.awaitShutdown
+      print("====start kafka server success====")
     }
     catch {
       case e: Throwable =>
