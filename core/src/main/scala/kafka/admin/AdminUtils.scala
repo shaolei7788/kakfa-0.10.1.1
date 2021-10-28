@@ -485,7 +485,6 @@ object AdminUtils extends Logging with AdminUtilities {
       val zkPath = getTopicPath(topic)
       //组装副本变成json字符串
       val jsonPartitionData = zkUtils.replicaAssignmentZkData(replicaAssignment.map(e => e._1.toString -> e._2))
-
       if (!update) {
         info("Topic creation " + jsonPartitionData.toString)
         zkUtils.createPersistentPath(zkPath, jsonPartitionData)

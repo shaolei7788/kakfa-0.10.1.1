@@ -39,11 +39,10 @@ import kafka.utils.{Logging, SystemTime, ZKGroupTopicDirs, ZkUtils}
 import org.apache.kafka.common.errors.{ClusterAuthorizationException, NotLeaderForPartitionException, TopicExistsException, UnknownTopicOrPartitionException, UnsupportedForMessageFormatException}
 import org.apache.kafka.common.metrics.Metrics
 import org.apache.kafka.common.protocol.{ApiKeys, Errors, Protocol, SecurityProtocol}
-import org.apache.kafka.common.requests.{ApiVersionsResponse, CreateTopicsRequest, CreateTopicsResponse, DeleteTopicsRequest, DeleteTopicsResponse, DescribeGroupsRequest, DescribeGroupsResponse, GroupCoordinatorRequest, GroupCoordinatorResponse, HeartbeatRequest, HeartbeatResponse, JoinGroupRequest, JoinGroupResponse, LeaderAndIsrRequest, LeaderAndIsrResponse, LeaveGroupRequest, LeaveGroupResponse, ListGroupsResponse, ListOffsetRequest, ListOffsetResponse, MetadataRequest, MetadataResponse, OffsetCommitRequest, OffsetCommitResponse, OffsetFetchRequest, OffsetFetchResponse, ProduceRequest, ProduceResponse, ResponseHeader, ResponseSend, StopReplicaRequest, StopReplicaResponse, SyncGroupRequest, SyncGroupResponse, UpdateMetadataRequest, UpdateMetadataResponse}
+import org.apache.kafka.common.requests.{ApiVersionsResponse, CreateTopicsRequest, CreateTopicsResponse, DeleteTopicsRequest, DeleteTopicsResponse, DescribeGroupsRequest, DescribeGroupsResponse, GroupCoordinatorRequest, GroupCoordinatorResponse, HeartbeatRequest, HeartbeatResponse, JoinGroupRequest, JoinGroupResponse, LeaderAndIsrRequest, LeaderAndIsrResponse, LeaveGroupRequest, LeaveGroupResponse, ListGroupsResponse, ListOffsetRequest, ListOffsetResponse, MetadataRequest, MetadataResponse, OffsetCommitRequest, OffsetCommitResponse, OffsetFetchRequest, OffsetFetchResponse, ProduceRequest, ProduceResponse, RequestHeader, ResponseHeader, ResponseSend, SaslHandshakeResponse, StopReplicaRequest, StopReplicaResponse, SyncGroupRequest, SyncGroupResponse, UpdateMetadataRequest, UpdateMetadataResponse}
 import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse
 import org.apache.kafka.common.utils.Utils
 import org.apache.kafka.common.{Node, TopicPartition}
-import org.apache.kafka.common.requests.SaslHandshakeResponse
 
 import scala.collection._
 import scala.collection.JavaConverters._
@@ -93,7 +92,7 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
         //todo 更新集群元数据 由控制器给所有存活的broker发送UPDATE_METADATA_KEY请求
         case ApiKeys.UPDATE_METADATA_KEY => handleUpdateMetadataRequest(request)
         case ApiKeys.CONTROLLED_SHUTDOWN_KEY => handleControlledShutdownRequest(request)
-        //todo 消费者提交偏移量  从Coodinator拉取
+        //todo 消费者提交偏移量  提交给GroupCoodinator
         case ApiKeys.OFFSET_COMMIT => handleOffsetCommitRequest(request)
         //todo 消费者拉取偏移量 从Coodinator拉取
         case ApiKeys.OFFSET_FETCH => handleOffsetFetchRequest(request)
@@ -263,7 +262,6 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
   def handleOffsetCommitRequest(request: RequestChannel.Request) {
     val header = request.header
     val offsetCommitRequest: OffsetCommitRequest = request.body.asInstanceOf[OffsetCommitRequest]
-
     // reject the request if not authorized to the group
     if (!authorize(request.session, Read, new Resource(Group, offsetCommitRequest.groupId))) {
       val errorCode = new JShort(Errors.GROUP_AUTHORIZATION_FAILED.code)
@@ -813,11 +811,10 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
                           replicationFactor: Int,
                           properties: Properties = new Properties()): MetadataResponse.TopicMetadata = {
     try {
+      //创建主题
       AdminUtils.createTopic(zkUtils, topic, numPartitions, replicationFactor, properties, RackAwareMode.Safe)
-      info("Auto creation of topic %s with %d partitions and replication factor %d is successful"
-        .format(topic, numPartitions, replicationFactor))
-      new MetadataResponse.TopicMetadata(Errors.LEADER_NOT_AVAILABLE, topic, Topic.isInternal(topic),
-        java.util.Collections.emptyList())
+      info("Auto creation of topic %s with %d partitions and replication factor %d is successful".format(topic, numPartitions, replicationFactor))
+      new MetadataResponse.TopicMetadata(Errors.LEADER_NOT_AVAILABLE, topic, Topic.isInternal(topic), java.util.Collections.emptyList())
     } catch {
       case e: TopicExistsException => // let it go, possibly another broker created this topic
         new MetadataResponse.TopicMetadata(Errors.LEADER_NOT_AVAILABLE, topic, Topic.isInternal(topic),
@@ -839,12 +836,12 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
         config.offsetsTopicReplicationFactor.toInt
       }
     //创建内部主题，默认情况下，offsets topic有50个分区，3个副本
-    createTopic(Topic.GroupMetadataTopicName, config.offsetsTopicPartitions,
-      offsetsTopicReplicationFactor, coordinator.offsetsTopicConfigs)
+    createTopic(Topic.GroupMetadataTopicName, config.offsetsTopicPartitions, offsetsTopicReplicationFactor, coordinator.offsetsTopicConfigs)
   }
 
   private def getOrCreateGroupMetadataTopic(securityProtocol: SecurityProtocol): MetadataResponse.TopicMetadata = {
     val topicMetadata = metadataCache.getTopicMetadata(Set(Topic.GroupMetadataTopicName), securityProtocol)
+    //todo 获取或创建内部主题
     topicMetadata.headOption.getOrElse(createGroupMetadataTopic())
   }
 
@@ -967,9 +964,8 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
    * Handle an offset fetch request
    */
   def handleOffsetFetchRequest(request: RequestChannel.Request) {
-    val header = request.header
+    val header: RequestHeader = request.header
     val offsetFetchRequest = request.body.asInstanceOf[OffsetFetchRequest]
-
     val responseHeader = new ResponseHeader(header.correlationId)
     val offsetFetchResponse =
     // reject the request if not authorized to the group
@@ -983,9 +979,9 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
       }
       val unknownTopicPartitionResponse = new OffsetFetchResponse.PartitionData(OffsetFetchResponse.INVALID_OFFSET, "", Errors.UNKNOWN_TOPIC_OR_PARTITION.code)
       val unauthorizedStatus = unauthorizedTopicPartitions.map(topicPartition => (topicPartition, unknownTopicPartitionResponse)).toMap
-
       if (header.apiVersion == 0) {
         // version 0 reads offsets from ZK
+        //从zk读取偏移量
         val responseInfo = authorizedTopicPartitions.map { topicPartition =>
           val topicDirs = new ZKGroupTopicDirs(offsetFetchRequest.groupId, topicPartition.topic)
           try {
@@ -1009,8 +1005,8 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
         new OffsetFetchResponse((responseInfo ++ unauthorizedStatus).asJava)
       } else {
         // version 1 reads offsets from Kafka;
+        //协调者处理拉取偏移量
         val offsets = coordinator.handleFetchOffsets(offsetFetchRequest.groupId, authorizedTopicPartitions).toMap
-
         // Note that we do not need to filter the partitions in the
         // metadata cache as the topic partitions will be filtered
         // in coordinator's offset manager through the offset cache
@@ -1022,6 +1018,7 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
     requestChannel.sendResponse(new Response(request, new ResponseSend(request.connectionId, responseHeader, offsetFetchResponse)))
   }
 
+  //处理查询GroupCoordinator请求
   def handleGroupCoordinatorRequest(request: RequestChannel.Request) {
     // 将请求转换成GroupCoordinatorRequest
     val groupCoordinatorRequest = request.body.asInstanceOf[GroupCoordinatorRequest]
@@ -1033,13 +1030,14 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
     } else {
       //找到内部主题分区 partition = groupId.hashcode % 50
       val partition: Int = coordinator.partitionFor(groupCoordinatorRequest.groupId)
-      // 内部主题元数据
+      // 获取或创建内部主题元数据
       val offsetsTopicMetadata : MetadataResponse.TopicMetadata = getOrCreateGroupMetadataTopic(request.securityProtocol)
 
       val responseBody = if (offsetsTopicMetadata.error != Errors.NONE) {
         new GroupCoordinatorResponse(Errors.GROUP_COORDINATOR_NOT_AVAILABLE.code, Node.noNode)
       } else {
-        // 找到分区对应的leader所在的broker,即是组协调者
+        //todo 找到分区对应的leader所在的broker,即是组协调者
+        // offsetsTopicMetadata.partitionMetadata() = List<PartitionMetadata>
         val coordinatorEndpoint : Option[Node] = offsetsTopicMetadata.partitionMetadata().asScala
           .find(_.partition == partition)
           .map(_.leader())

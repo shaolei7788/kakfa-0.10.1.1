@@ -132,10 +132,10 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
         this.sensors = new ConsumerCoordinatorMetrics(metrics, metricGrpPrefix);
         this.interceptors = interceptors;
         this.excludeInternalTopics = excludeInternalTopics;
-
-        if (autoCommitEnabled)
+        if (autoCommitEnabled) {
+            //下次自动提交偏移量截止时间  autoCommitIntervalMs = 5000
             this.nextAutoCommitDeadline = time.milliseconds() + autoCommitIntervalMs;
-
+        }
         this.metadata.requestUpdate();
         addMetadataListener();
     }
@@ -296,16 +296,18 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
         return Math.min(nextAutoCommitDeadline - now, timeToNextHeartbeat(now));
     }
 
+    //给每个消费者分配消费的分区
     @Override
     protected Map<String, ByteBuffer> performAssignment(String leaderId,
                                                         String assignmentStrategy,
+                                                        //消费者的订阅信息 key=memberid value = Set<Topic>
                                                         Map<String, ByteBuffer> allSubscriptions) {
         //获取指定的分区分配器 默认是range分区
         PartitionAssignor assignor = lookupAssignor(assignmentStrategy);
         if (assignor == null)
             throw new IllegalStateException("Coordinator selected invalid assignment protocol: " + assignmentStrategy);
 
-        //订阅的所有主题
+        //消费者组订阅的所有主题
         Set<String> allSubscribedTopics = new HashSet<>();
         Map<String, Subscription> subscriptions = new HashMap<>();
         for (Map.Entry<String, ByteBuffer> subscriptionEntry : allSubscriptions.entrySet()) {
@@ -317,7 +319,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
         }
         //更新消费组订阅的主题
         this.subscriptions.groupSubscribe(allSubscribedTopics);
-        //更新集群订阅的主题
+        //更新元数据 消费者组订阅的主题
         metadata.setTopics(this.subscriptions.groupSubscription());
         // update metadata (if needed) and keep track of the metadata used for assignment so that
         // we can check after rebalance completion whether anything has changed
@@ -327,7 +329,8 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
         assignmentSnapshot = metadataSnapshot;
         log.debug("Performing assignment for group {} using strategy {} with subscriptions {}", groupId, assignor.name(), subscriptions);
 
-        //todo 进行分区分配 metadata.fetch() = Cluster    subscriptions 所有的消费者信息
+        //todo 根据分配策略，为所有消费者分配分区
+        // 进行分区分配 metadata.fetch() = Cluster    subscriptions 所有的消费者订阅信息
         // key是每个消费者id   Assignment是分配的结果
         Map<String, Assignment> assignment = assignor.assign(metadata.fetch(), subscriptions);
         log.debug("Finished assignment for group {}: {}", groupId, assignment);
@@ -419,13 +422,10 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
             RequestFuture<Map<TopicPartition, OffsetAndMetadata>> future = sendOffsetFetchRequest(partitions);
             //阻塞式获取响应
             client.poll(future);
-
             if (future.succeeded())
                 return future.value();
-
             if (!future.isRetriable())
                 throw future.exception();
-
             time.sleep(retryBackoffMs);
         }
     }
@@ -544,6 +544,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
             } else if (now >= nextAutoCommitDeadline) {
                 //todo 下次提交偏移量时间   autoCommitIntervalMs = 5000
                 this.nextAutoCommitDeadline = now + autoCommitIntervalMs;
+                //自动提交偏移量
                 doAutoCommitOffsetsAsync();
             }
         }
@@ -554,6 +555,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
             doAutoCommitOffsetsAsync();
     }
 
+    //自动提交偏移量
     private void doAutoCommitOffsetsAsync() {
         //已经消费的分区偏移量
         Map<TopicPartition, OffsetAndMetadata> allConsumed = subscriptions.allConsumed();
@@ -566,6 +568,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
                     if (exception instanceof RetriableException)
                         nextAutoCommitDeadline = Math.min(time.milliseconds() + retryBackoffMs, nextAutoCommitDeadline);
                 } else {
+                    System.out.println("Completed autocommit");
                     log.debug("Completed autocommit of offsets {} for group {}", offsets, groupId);
                 }
             }
@@ -576,6 +579,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
     private void maybeAutoCommitOffsetsSync() {
         if (autoCommitEnabled) {
             try {
+                // subscriptions.allConsumed() = 所有已经消费的分区偏移量
                 commitOffsetsSync(subscriptions.allConsumed());
             } catch (WakeupException e) {
                 // rethrow wakeups since they are triggered by the user
@@ -741,9 +745,8 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
             return RequestFuture.coordinatorNotAvailable();
 
         log.debug("Group {} fetching committed offsets for partitions: {}", groupId, partitions);
-        // construct the request
+        //创建拉取偏移量请求对象
         OffsetFetchRequest request = new OffsetFetchRequest(this.groupId, new ArrayList<>(partitions));
-
         // 创建发送请求对象
         RequestFuture<ClientResponse> send = client.send(coordinator, ApiKeys.OFFSET_FETCH, request);
         //返回的是adapted 对象
@@ -766,10 +769,10 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
             for (Map.Entry<TopicPartition, OffsetFetchResponse.PartitionData> entry : response.responseData().entrySet()) {
                 TopicPartition tp = entry.getKey();
                 OffsetFetchResponse.PartitionData data = entry.getValue();
+                System.out.println("metadata >> "+data.metadata);
                 if (data.hasError()) {
                     Errors error = Errors.forCode(data.errorCode);
                     log.debug("Group {} failed to fetch offset for partition {}: {}", groupId, tp, error.message());
-
                     if (error == Errors.GROUP_LOAD_IN_PROGRESS) {
                         // just retry
                         future.raise(error);
@@ -790,7 +793,6 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
                     log.debug("Group {} has no committed offset for partition {}", groupId, tp);
                 }
             }
-
             future.complete(offsets);
         }
     }

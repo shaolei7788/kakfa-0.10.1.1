@@ -72,8 +72,7 @@ object RequestChannel extends Logging {
       )
 
     // TODO: this will be removed once we migrated to client-side format
-    val requestObj =
-      keyToNameAndDeserializerMap.get(requestId).map(readFrom => readFrom(buffer)).orNull
+    val requestObj = keyToNameAndDeserializerMap.get(requestId).map(readFrom => readFrom(buffer)).orNull
 
     // if we failed to find a server-side mapping, then try using the
     // client-side request / response format
@@ -192,8 +191,9 @@ class RequestChannel(val numProcessors: Int, val queueSize: Int) extends KafkaMe
   //todo 多个响应 有几个processor responseQueues就有多大 每个processor 对应数组中的一个队列
   private val responseQueues = new Array[BlockingQueue[RequestChannel.Response]](numProcessors)
 
-  for(i <- 0 until numProcessors)
+  for(i <- 0 until numProcessors) {
     responseQueues(i) = new LinkedBlockingQueue[RequestChannel.Response]()
+  }
 
   newGauge(
     "RequestQueueSize",

@@ -69,7 +69,7 @@ public final class Metadata {
     //这是一个标识,用来判定是否需要更新元数据
     private boolean needUpdate;
     /* Topics with expiry time */
-    //记录了当前已有的topic
+    //记录了当前已有的topic key =topic value = TOPIC_EXPIRY_NEEDS_UPDATE = -1
     private final Map<String, Long> topics;
     private final List<Listener> listeners;
     private final ClusterResourceListeners clusterResourceListeners;
@@ -202,8 +202,9 @@ public final class Metadata {
         if (!this.topics.keySet().containsAll(topics))
             requestUpdate();
         this.topics.clear();
-        for (String topic : topics)
+        for (String topic : topics) {
             this.topics.put(topic, TOPIC_EXPIRY_NEEDS_UPDATE);
+        }
     }
 
     /**

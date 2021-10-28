@@ -49,15 +49,10 @@ public class Producer {
 
     public void dowork() {
         long startTime = System.currentTimeMillis();
-        for (int i = 10; i < 20; i++) {
+        for (int i = 0; i < 10; i++) {
             //同步发送
             producer.send(new ProducerRecord<String, String>(topic,"hello" +i));
-            try {
-                Thread.sleep(1000);
-                System.out.println(i + " 发送成功");
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
+
             //异步发送
 //            producer.send(new ProducerRecord<>(topic, String.valueOf(i), "hello" + i),
 //                    new DemoCallBack(startTime, String.valueOf(i), "hello" + i));

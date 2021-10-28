@@ -106,6 +106,7 @@ public class MemoryRecords implements Records {
         //todo  offset 相对偏移量   size 消息大小
         compressor.putLong(offset);
         compressor.putInt(size);
+        //完整的一条消息大小 = 8 + 4 + 22 + keySize + valueSize = 34 + keySize + valueSize
         //添加记录
         long crc = compressor.putRecord(timestamp, key, value);
         compressor.recordWritten(size + Records.LOG_OVERHEAD);

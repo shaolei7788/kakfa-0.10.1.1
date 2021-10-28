@@ -75,7 +75,7 @@ public class SubscriptionState {
     private Set<TopicPartition> userAssignment;
 
     /* the list of topics the group has subscribed to (set only for the leader on join group completion) */
-    //todo 消费组订阅的主题  leader会将消费者组所有的topic添加到 groupSubscription follower则只关心自己的topic
+    //todo 整个消费组订阅的主题
     private final Set<String> groupSubscription;
 
     //todo 存储消费者当前分区的分区及状态
@@ -327,17 +327,22 @@ public class SubscriptionState {
         return assignedState(tp).position;
     }
 
+    //所有已经消费的分区偏移量
     public Map<TopicPartition, OffsetAndMetadata> allConsumed() {
         Map<TopicPartition, OffsetAndMetadata> allConsumed = new HashMap<>();
         for (PartitionStates.PartitionState<TopicPartitionState> state : assignment.partitionStates()) {
             if (state.value().hasValidPosition())
+                // <主题分区，偏移量元数据>
                 allConsumed.put(state.topicPartition(), new OffsetAndMetadata(state.value().position));
         }
         return allConsumed;
     }
 
     public void needOffsetReset(TopicPartition partition, OffsetResetStrategy offsetResetStrategy) {
-        assignedState(partition).awaitReset(offsetResetStrategy);
+        //获取分区状态
+        TopicPartitionState topicPartitionState = assignedState(partition);
+        //重置拉取偏移量策略
+        topicPartitionState.awaitReset(offsetResetStrategy);
     }
 
     public void needOffsetReset(TopicPartition partition) {
@@ -408,9 +413,9 @@ public class SubscriptionState {
     // 消费者拉取消息时要更新拉取偏移量
     // 处理消息时要更新提交偏移量
     private static class TopicPartitionState {
-        //todo 上次消费的位置 下次拉取就是从这个位置开始拉取 表示分区的拉取进度，它的值不为空，消费者才可以拉取这分区
+        //拉取偏移量 ，上次消费的位置，下次拉取就是从这个位置开始拉取 表示分区的拉取进度，它的值不为空，消费者才可以拉取这分区  默认值为null
         private Long position; // last consumed position
-        //
+        //提交偏移量，上次提交的位置
         private OffsetAndMetadata committed;  // last committed position
         //分区是否被暂停拉取
         private boolean paused;
@@ -424,7 +429,7 @@ public class SubscriptionState {
             this.resetStrategy = null;
         }
 
-        //重置拉取偏移量
+        //重置拉取偏移量策略
         private void awaitReset(OffsetResetStrategy strategy) {
             this.resetStrategy = strategy;
             this.position = null;
@@ -464,6 +469,7 @@ public class SubscriptionState {
             this.paused = false;
         }
 
+        //判断是否可以拉取  条件是 没有终止 并且拉取偏移量不为空
         private boolean isFetchable() {
             return !paused && hasValidPosition();
         }

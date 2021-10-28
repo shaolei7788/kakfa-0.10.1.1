@@ -414,6 +414,7 @@ class GroupCoordinator(val brokerId: Int,
     }
   }
 
+  //执行提交偏移量
   def handleCommitOffsets(groupId: String,
                           memberId: String,
                           generationId: Int,
@@ -426,6 +427,7 @@ class GroupCoordinator(val brokerId: Int,
     } else if (isCoordinatorLoadingInProgress(groupId)) {
       responseCallback(offsetMetadata.mapValues(_ => Errors.GROUP_LOAD_IN_PROGRESS.code))
     } else {
+      //消费者组元数据
       groupManager.getGroup(groupId) match {
         case None =>
           if (generationId < 0) {
@@ -436,7 +438,6 @@ class GroupCoordinator(val brokerId: Int,
             // or this is a request coming from an older generation. either way, reject the commit
             responseCallback(offsetMetadata.mapValues(_ => Errors.ILLEGAL_GENERATION.code))
           }
-
         case Some(group) =>
           doCommitOffsets(group, memberId, generationId, offsetMetadata, responseCallback)
       }

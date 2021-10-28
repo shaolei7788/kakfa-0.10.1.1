@@ -112,7 +112,7 @@ private[server] class MetadataCache(brokerId: Int) extends Logging {
   }
 
   // errorUnavailableEndpoints exists to support v0 MetadataResponses
-  //获取指定topic的元数据信息
+  //获取指定topic的元数据信息    protocol = PLAINTEXT
   def getTopicMetadata(topics: Set[String], protocol: SecurityProtocol,
                        errorUnavailableEndpoints: Boolean = false): Seq[MetadataResponse.TopicMetadata] = {
     inReadLock(partitionMetadataLock) {

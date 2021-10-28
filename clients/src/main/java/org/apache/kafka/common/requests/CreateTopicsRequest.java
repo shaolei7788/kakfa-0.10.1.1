@@ -176,10 +176,8 @@ public class CreateTopicsRequest extends AbstractRequest {
             Map<String, String> configs = new HashMap<>(configArray.length);
             for (Object configStructObj : configArray) {
                 Struct configStruct = (Struct) configStructObj;
-
                 String key = configStruct.getString(CONFIG_KEY_KEY_NAME);
                 String value = configStruct.getString(CONFIG_VALUE_KEY_NAME);
-
                 configs.put(key, value);
             }
 
