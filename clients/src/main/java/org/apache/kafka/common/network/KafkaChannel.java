@@ -138,7 +138,7 @@ public class KafkaChannel {
     public NetworkReceive read() throws IOException {
         NetworkReceive result = null;
         if (receive == null) {
-            //id 会作为NetworkReceive的source
+            //id 会作为NetworkReceive的source  maxReceiveSize = -1 没有限制
             receive = new NetworkReceive(maxReceiveSize, id);
         }
         //一直在读取数据
@@ -176,7 +176,7 @@ public class KafkaChannel {
             //todo send请求全部写出去，移除OP_WRITE
             transportLayer.removeInterestOps(SelectionKey.OP_WRITE);
         }
-        //send请求没有全部写出去，会继续监听写事件
+        //如果send请求没有全部写出去，会继续监听写事件
         return send.completed();
     }
 

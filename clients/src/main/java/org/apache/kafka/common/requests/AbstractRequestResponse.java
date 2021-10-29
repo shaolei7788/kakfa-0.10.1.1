@@ -19,7 +19,6 @@ import java.nio.ByteBuffer;
 public abstract class AbstractRequestResponse {
     protected final Struct struct;
 
-
     public AbstractRequestResponse(Struct struct) {
         this.struct = struct;
     }

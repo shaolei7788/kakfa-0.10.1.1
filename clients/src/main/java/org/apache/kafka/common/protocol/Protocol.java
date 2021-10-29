@@ -36,19 +36,14 @@ import static org.apache.kafka.common.protocol.types.Type.NULLABLE_STRING;
 
 public class Protocol {
 
+    //请求头
     public static final Schema REQUEST_HEADER = new Schema(new Field("api_key", INT16, "The id of the request type."),
                                                            new Field("api_version", INT16, "The version of the API."),
-                                                           new Field("correlation_id",
-                                                                     INT32,
-                                                                     "A user-supplied integer value that will be passed back with the response"),
-                                                           new Field("client_id",
-                                                                     NULLABLE_STRING,
-                                                                     "A user specified identifier for the client making the request.",
-                                                                     ""));
+                                                           new Field("correlation_id", INT32, "A user-supplied integer value that will be passed back with the response"),
+                                                           new Field("client_id", NULLABLE_STRING, "A user specified identifier for the client making the request.", ""));
 
-    public static final Schema RESPONSE_HEADER = new Schema(new Field("correlation_id",
-                                                                      INT32,
-                                                                      "The user-supplied value passed in with the request"));
+    //响应头
+    public static final Schema RESPONSE_HEADER = new Schema(new Field("correlation_id", INT32, "The user-supplied value passed in with the request"));
 
     /* Metadata api */
 

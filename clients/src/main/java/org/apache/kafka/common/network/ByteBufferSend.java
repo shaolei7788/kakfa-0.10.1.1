@@ -25,7 +25,7 @@ public class ByteBufferSend implements Send {
     private final String destination;
     //发送数据的大小
     private final int size;
-    //数据
+    //数据 = 4个字节大小 + 字节内容
     protected final ByteBuffer[] buffers;
     //是否还有剩余
     private int remaining;
@@ -35,8 +35,10 @@ public class ByteBufferSend implements Send {
         super();
         this.destination = destination;
         this.buffers = buffers;
-        for (int i = 0; i < buffers.length; i++)
+        for (int i = 0; i < buffers.length; i++) {
+            //将每个buffer消息累加
             remaining += buffers[i].remaining();
+        }
         this.size = remaining;
     }
 

@@ -260,6 +260,7 @@ public class NetworkClient implements KafkaClient {
 
 
     private void doSend(ClientRequest request, long now) {
+        //设置发送时间
         request.setSendTimeMs(now);
         //往inFlightRequests组件里存储request请求
         //其实就是存储还没有收到响应的请求
@@ -269,13 +270,13 @@ public class NetworkClient implements KafkaClient {
         // 包含一个节点到双端队列的Map类型  inFlightRequests.requests = Map<String, Deque<ClientRequest>>
         // 在准备发送请求时，请求将添加到指定节点对应的队列中，收到响应后，才会将该请求从队列中移除
         this.inFlightRequests.add(request);
+        // request.request() = RequestSend
         selector.send(request.request());
     }
 
     /**
      * Do actual reads and writes to sockets.
      * 执行读写操作
-     *
      * @param timeout The maximum amount of time to wait (in ms) for responses if there are none immediately,
      *                must be non-negative. The actual timeout will be the minimum of timeout, request timeout and
      *                metadata timeout
@@ -366,6 +367,7 @@ public class NetworkClient implements KafkaClient {
      */
     @Override
     public RequestHeader nextRequestHeader(ApiKeys key) {
+        // correlation 相关性，自增
         return new RequestHeader(key.id, clientId, correlation++);
     }
 
@@ -430,11 +432,14 @@ public class NetworkClient implements KafkaClient {
         return found;
     }
 
+    //todo 解析服务端发送回来的请求(里面有响应的结果数据)  receive.payload() = 响应体  req.request().header() 请求头
     public static Struct parseResponse(ByteBuffer responseBuffer, RequestHeader requestHeader) {
+        //todo 解析响应buffer,获取响应头
         ResponseHeader responseHeader = ResponseHeader.parse(responseBuffer);
         // Always expect the response version id to be the same as the request version id
         short apiKey = requestHeader.apiKey();
         short apiVer = requestHeader.apiVersion();
+        //todo 解析响应buffer,获取响应体  ProtoUtils.responseSchema(apiKey, apiVer) 获取指定apikey对应的Schema
         Struct responseBody = ProtoUtils.responseSchema(apiKey, apiVer).read(responseBuffer);
         correlate(requestHeader, responseHeader);
         return responseBody;
@@ -510,16 +515,16 @@ public class NetworkClient implements KafkaClient {
      */
     private void handleCompletedReceives(List<ClientResponse> responses, long now) {
         for (NetworkReceive receive : this.selector.completedReceives()) {
-            //获取broker id
+            //获取发送方的 broker id
             String source = receive.source();
             /**
              * kafka有这样一个机制: 每个连接可以容忍5个没有接收到响应,但是已经发出去了的请求
              */
             //todo 从inFlightRequests中移除已经接收到响应的请求，把之前存入的请求也获取到了
             ClientRequest req = inFlightRequests.completeNext(source);
-            //解析服务端发送回来的请求(里面有响应的结果数据)
+            //todo 解析服务端发送回来的请求(里面有响应的结果数据)  receive.payload() = 响应体  req.request().header() 请求头
             Struct body = parseResponse(receive.payload(), req.request().header());
-            //TODO 判断是否是关于元数据信息响应
+            //todo 判断是否是关于元数据信息响应
             if (!metadataUpdater.maybeHandleCompletedReceive(req, now, body)) {
                 //不是关于元数据信息响应的，需要添加到responses
 
@@ -707,6 +712,7 @@ public class NetworkClient implements KafkaClient {
          * 为给定主题创建元数据请求
          */
         private ClientRequest request(long now, String node, MetadataRequest metadata) {
+            // 三个参数依次为  String destination, RequestHeader header, Struct body
             RequestSend send = new RequestSend(node, nextRequestHeader(ApiKeys.METADATA), metadata.toStruct());
             return new ClientRequest(now, true, send, null, true);
         }

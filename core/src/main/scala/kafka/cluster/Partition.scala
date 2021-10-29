@@ -52,18 +52,22 @@ class Partition(val topic: String,
   private val logManager = replicaManager.logManager
 
   private val zkUtils = replicaManager.zkUtils
-  //维护了该分区的全部副本集合 AR  key=replicaId value = Replica
+  //维护了该分区的全部副本集合 AR  key=brokerid  value = Replica
   private val assignedReplicaMap = new Pool[Int, Replica]
   // The read lock is only required when multiple reads are executed and needs to be in a consistent manner
   private val leaderIsrUpdateLock = new ReentrantReadWriteLock()
+  // zkVersion = 0
   private var zkVersion: Int = LeaderAndIsr.initialZKVersion
+  //初始leaderEpoch版本 -1
   @volatile private var leaderEpoch: Int = LeaderAndIsr.initialLeaderEpoch - 1
+
   //该分区leader副本的id
   @volatile var leaderReplicaIdOpt: Option[Int] = None
+
   //维护了该分区的ISR集合
   @volatile var inSyncReplicas: Set[Replica] = Set.empty[Replica]
 
-  //
+  //控制器选举版本 -1
   private var controllerEpoch: Int = KafkaController.InitialControllerEpoch - 1
   this.logIdent = "Partition [%s,%d] on broker %d: ".format(topic, partitionId, localBrokerId)
 
@@ -72,6 +76,7 @@ class Partition(val topic: String,
 
   val tags = Map("topic" -> topic, "partition" -> partitionId.toString)
 
+  // 性能监控 Gauge implements Metric
   newGauge("UnderReplicated",
     new Gauge[Int] {
       def value = {
@@ -90,7 +95,6 @@ class Partition(val topic: String,
         false
     }
   }
-
 
   //根据给定的副本编号获取或创建副本
   //创建副本对象时，从检查点文件(replication-offset-checkpoint)读取分区的HW作为初始的最高水位
@@ -118,6 +122,7 @@ class Partition(val topic: String,
           val offset = offsetMap.getOrElse(TopicAndPartition(topic, partitionId), 0L).min(log.logEndOffset)
           //todo 创建Replica对象并添加到 assignedReplicaMap
           val localReplica = new Replica(replicaId, this, time, offset, Some(log))
+          //添加本地副本
           addReplicaIfNotExists(localReplica)
         } else {
           //远程副本
@@ -132,7 +137,6 @@ class Partition(val topic: String,
   //1         1             2               None              Some(Replica(1))
   //2         2             2               Some(Replica(2))  Some(Replica(2))
   //3         3             2               None              Some(Replica(3))
-
   //获取指定replicaId的副本，默认是当前broker对应的编号
   def getReplica(replicaId: Int = localBrokerId): Option[Replica] = {
     val replica = assignedReplicaMap.get(replicaId)

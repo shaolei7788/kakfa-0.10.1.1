@@ -198,11 +198,11 @@ public abstract class AbstractCoordinator implements Closeable {
             if (future.failed()) {
                 //异常处理
                 if (future.isRetriable()){
-                    //阻塞更新Metadata
+                    //阻塞等待更新Metadata
                     client.awaitMetadataUpdate();
-                }
-                else
+                } else {
                     throw future.exception();
+                }
             } else if (coordinator != null && client.connectionFailed(coordinator)) {
                 // we found the coordinator, but the connection has failed, so mark
                 // it dead and backoff before retrying discovery
@@ -588,6 +588,8 @@ public abstract class AbstractCoordinator implements Closeable {
             // use MAX_VALUE - node.id as the coordinator id to mimic separate connections
             // for the coordinator in the underlying network client layer
             // TODO: this needs to be better handled in KAFKA-1935
+            // 这里会根据错误码获取对应的异常
+            // 如果是响应 NOT_COORDINATOR_FOR_GROUP = 16，则返回 NotCoordinatorForGroupException 异常，是一个可重试异常
             Errors error = Errors.forCode(groupCoordinatorResponse.errorCode());
             clearFindCoordinatorFuture();
             if (error == Errors.NONE) {

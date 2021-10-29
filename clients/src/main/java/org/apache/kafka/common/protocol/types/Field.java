@@ -25,6 +25,7 @@ public class Field {
 
     final int index;
     public final String name;
+    // INT32  INT16
     public final Type type;
     public final Object defaultValue;
     public final String doc;

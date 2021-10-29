@@ -24,6 +24,8 @@ import kafka.common.KafkaException
 
 import java.util.concurrent.atomic.AtomicLong
 
+
+//todo  {"version":1,"partitions":{"2":[1,0],"1":[0,2],"0":[2,1]}}  副本是broker的id
 //目的是为了增加kafka集群的高可用 每个副本对应一个Log
 // 副本编号表示对应broker的编号
 class Replica(val brokerId: Int,

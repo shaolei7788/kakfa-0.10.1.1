@@ -104,6 +104,7 @@ class SocketServer(val config: KafkaConfig, val metrics: Metrics, val time: Time
         //todo 创建acceptor对象 用于接收并处理所有的连接  同时会启动processor线程
         val acceptor = new Acceptor(endpoint, sendBufferSize, recvBufferSize, brokerId,
           processors.slice(processorBeginIndex, processorEndIndex), connectionQuotas)
+
         //一个机器可能有多个broker 但一般不会这样做
         acceptors.put(endpoint, acceptor)
         //todo 启动acceptor线程 非守护线程
@@ -271,7 +272,7 @@ private[kafka] class Acceptor(val endPoint: EndPoint,
       var currentProcessor = 0
       while (isRunning) {
         try {
-          val ready = nioSelector.select(500)
+          val ready: Int = nioSelector.select(500)
           if (ready > 0) {
             val keys = nioSelector.selectedKeys()
             val iter = keys.iterator()
@@ -429,13 +430,13 @@ private[kafka] class Processor(val id: Int,
     startupComplete()
     while (isRunning) {
       try {
-        //todo 处理newConnections队列中的SocketChannel
+        //todo 处理newConnections队列中的SocketChannel,注册读事件
         configureNewConnections()
         //todo 注册写事件，用于发送响应给客户端
         processNewResponses()
         //读取请求，发送响应
         poll()
-        //todo 处理已完成的接收 completedReceives
+        //todo 处理已完成的接收 completedReceives，将请求加入requestQueue队列
         processCompletedReceives()
         //todo 处理已完成的发送 completedSends
         processCompletedSends()
@@ -512,16 +513,18 @@ private[kafka] class Processor(val id: Int,
   }
 
   private def processCompletedReceives() {
-    //遍历completedReceives
+    //遍历completedReceives  List<NetworkReceive>
     selector.completedReceives.asScala.foreach { receive =>
       try {
+        //  receive = NetworkReceive
         val channel = selector.channel(receive.source)
         //创建KafakChannel对应的session对象，与权限控制相关
         val session = RequestChannel.Session(new KafkaPrincipal(KafkaPrincipal.USER_TYPE, channel.principal.getName),channel.socketAddress)
-        //创建RequestChannel.Request对象
+        //todo 创建RequestChannel.Request对象,会解析 buffer内容
         val req : RequestChannel.Request = RequestChannel.Request(processor = id, connectionId = receive.source,
+          //  receive.payload 就是获取buffer对象
           session = session, buffer = receive.payload, startTimeMs = time.milliseconds, securityProtocol = protocol)
-        //todo 将req加入requestChannel
+        //todo 将请求加入requestQueue队列
         requestChannel.sendRequest(req)
         //取消注册的OP_READ事件，不再读取数据
         selector.mute(receive.source)

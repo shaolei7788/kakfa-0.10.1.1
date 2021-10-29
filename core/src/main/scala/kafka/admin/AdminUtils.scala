@@ -403,9 +403,12 @@ object AdminUtils extends Logging with AdminUtilities {
   def topicExists(zkUtils: ZkUtils, topic: String): Boolean =
     zkUtils.zkClient.exists(getTopicPath(topic))
 
+  //获取broker元数据
   def getBrokerMetadatas(zkUtils: ZkUtils, rackAwareMode: RackAwareMode = RackAwareMode.Enforced,
                         brokerList: Option[Seq[Int]] = None): Seq[BrokerMetadata] = {
-    val allBrokers = zkUtils.getAllBrokersInCluster()
+    //所有活着的broker
+    val allBrokers: Seq[Broker] = zkUtils.getAllBrokersInCluster()
+
     val brokers = brokerList.map(brokerIds => allBrokers.filter(b => brokerIds.contains(b.id))).getOrElse(allBrokers)
     val brokersWithRack = brokers.filter(_.rack.nonEmpty)
     if (rackAwareMode == RackAwareMode.Enforced && brokersWithRack.nonEmpty && brokersWithRack.size < brokers.size) {
@@ -465,16 +468,13 @@ object AdminUtils extends Logging with AdminUtilities {
       if (reps.size != reps.toSet.size)
         throw new InvalidReplicaAssignmentException("Duplicate replica assignment found: " + partitionReplicaAssignment)
     )
-
-
     // Configs only matter if a topic is being created. Changing configs via AlterTopic is not supported
     if (!update) {
       // write out the config if there is any, this isn't transactional with the partition assignments
       LogConfig.validate(config)
       writeEntityConfig(zkUtils, getEntityConfigPath(ConfigType.Topic, topic), config)
     }
-
-    // create the partition assignment
+    //在zk上创建分区分配的结果信息
     writeTopicPartitionAssignment(zkUtils, topic, partitionReplicaAssignment, update)
   }
 

@@ -27,6 +27,7 @@ public class NetworkSend extends ByteBufferSend {
         super(destination, sizeDelimit(buffers));
     }
 
+    //delimit 划界,界定
     private static ByteBuffer[] sizeDelimit(ByteBuffer[] buffers) {
         int size = 0;
         for (int i = 0; i < buffers.length; i++)

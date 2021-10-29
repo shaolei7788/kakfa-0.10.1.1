@@ -79,6 +79,7 @@ object RequestChannel extends Logging {
     val header: RequestHeader =
       if (requestObj == null) {
         buffer.rewind
+        //解析请求头
         try RequestHeader.parse(buffer)
         catch {
           case ex: Throwable =>
@@ -93,6 +94,7 @@ object RequestChannel extends Logging {
           if (header.apiKey == ApiKeys.API_VERSIONS.id && !Protocol.apiVersionSupported(header.apiKey, header.apiVersion))
             new ApiVersionsRequest
           else
+            //解析请求体
             AbstractRequest.getRequest(header.apiKey, header.apiVersion, buffer)
         } catch {
           case ex: Throwable =>

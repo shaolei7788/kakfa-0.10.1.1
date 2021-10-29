@@ -103,7 +103,7 @@ public class NetworkReceive implements Receive {
             }
         }
         if (buffer != null) {
-            //读取数据
+            //将通道里的数据读取到buffer
             int bytesRead = channel.read(buffer);
             if (bytesRead < 0)
                 throw new EOFException();

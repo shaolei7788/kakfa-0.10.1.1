@@ -54,12 +54,19 @@ public class Schema extends Type {
                 f.type.write(buffer, value);
             } catch (Exception e) {
                 throw new SchemaException("Error writing field '" + f.name +
-                                          "': " +
-                                          (e.getMessage() == null ? e.getClass().getName() : e.getMessage()));
+                                          "': " + (e.getMessage() == null ? e.getClass().getName() : e.getMessage()));
             }
         }
     }
 
+
+    /**
+     *  public static final Schema METADATA_RESPONSE_V2 =new Schema(
+            new Field("brokers", new ArrayOf(METADATA_BROKER_V1),"Host and port information for all brokers."),
+            new Field("cluster_id", NULLABLE_STRING,"The cluster id that this broker belongs to."),
+            new Field("controller_id", INT32,"The broker id of the controller broker."),
+            new Field("topic_metadata", new ArrayOf(TOPIC_METADATA_V1)));
+     */
     /**
      * Read a struct from the buffer
      */

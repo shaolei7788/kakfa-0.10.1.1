@@ -69,18 +69,18 @@ private[server] class MetadataCache(brokerId: Int) extends Logging {
     }
 
   // errorUnavailableEndpoints exists to support v0 MetadataResponses
+  //获取分区元数据
   private def getPartitionMetadata(topic: String, protocol: SecurityProtocol, errorUnavailableEndpoints: Boolean): Option[Iterable[MetadataResponse.PartitionMetadata]] = {
-    //遍历分区状态信息
+    //遍历分区状态信息 Map[Int, PartitionStateInfo]
     cache.get(topic).map { partitions =>
+      //遍历每个分区 Int, PartitionStateInfo
       partitions.map { case (partitionId, partitionState) =>
         val topicPartition = TopicAndPartition(topic, partitionId)
-
         val leaderAndIsr = partitionState.leaderIsrAndControllerEpoch.leaderAndIsr
         val maybeLeader = getAliveEndpoint(leaderAndIsr.leader, protocol)
-
         val replicas = partitionState.allReplicas
+        //replicas副本中活着的broker节点
         val replicaInfo = getEndpoints(replicas, protocol, errorUnavailableEndpoints)
-
         maybeLeader match {
           case None =>
             debug(s"Error while fetching metadata for $topicPartition: leader not available")
@@ -89,12 +89,11 @@ private[server] class MetadataCache(brokerId: Int) extends Logging {
 
           case Some(leader) =>
             val isr = leaderAndIsr.isr
+            //isr中活着的broker节点
             val isrInfo = getEndpoints(isr, protocol, errorUnavailableEndpoints)
-
             if (replicaInfo.size < replicas.size) {
               debug(s"Error while fetching metadata for $topicPartition: replica information not available for " +
                 s"following brokers ${replicas.filterNot(replicaInfo.map(_.id).contains).mkString(",")}")
-
               new MetadataResponse.PartitionMetadata(Errors.REPLICA_NOT_AVAILABLE, partitionId, leader,
                 replicaInfo.asJava, isrInfo.asJava)
             } else if (isrInfo.size < isr.size) {
@@ -117,6 +116,7 @@ private[server] class MetadataCache(brokerId: Int) extends Logging {
                        errorUnavailableEndpoints: Boolean = false): Seq[MetadataResponse.TopicMetadata] = {
     inReadLock(partitionMetadataLock) {
       topics.toSeq.flatMap { topic =>
+        // Iterable[MetadataResponse.PartitionMetadata]
         getPartitionMetadata(topic, protocol, errorUnavailableEndpoints).map { partitionMetadata =>
           new MetadataResponse.TopicMetadata(Errors.NONE, topic, Topic.isInternal(topic), partitionMetadata.toBuffer.asJava)
         }

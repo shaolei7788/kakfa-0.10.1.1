@@ -31,10 +31,12 @@ public class RequestSend extends NetworkSend {
         this.body = body;
     }
 
+    //序列化请求头跟请求体
     public static ByteBuffer serialize(RequestHeader header, Struct body) {
         ByteBuffer buffer = ByteBuffer.allocate(header.sizeOf() + body.sizeOf());
         header.writeTo(buffer);
         body.writeTo(buffer);
+        //todo 重置position = 0
         buffer.rewind();
         return buffer;
     }

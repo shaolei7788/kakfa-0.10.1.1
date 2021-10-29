@@ -50,6 +50,7 @@ public class ResponseHeader extends AbstractRequestResponse {
     }
 
     public static ResponseHeader parse(ByteBuffer buffer) {
+        //响应头读取buffer
         return new ResponseHeader(Protocol.RESPONSE_HEADER.read(buffer));
     }
 

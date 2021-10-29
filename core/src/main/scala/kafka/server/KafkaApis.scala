@@ -83,7 +83,7 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
         case ApiKeys.FETCH => handleFetchRequest(request)
         //todo 消费者列举偏移量 从分区主副本拉取
         case ApiKeys.LIST_OFFSETS => handleOffsetRequest(request)
-        //todo 生产者获取集群元数据
+        //todo 生产者获取主题元数据
         case ApiKeys.METADATA => handleTopicMetadataRequest(request)
         //todo 请求控制副本的leader follower 切换  控制器向broker节点发送
         case ApiKeys.LEADER_AND_ISR => handleLeaderAndIsrRequest(request)
@@ -840,11 +840,13 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
   }
 
   private def getOrCreateGroupMetadataTopic(securityProtocol: SecurityProtocol): MetadataResponse.TopicMetadata = {
+    // topicMetadata = Seq[MetadataResponse.TopicMetadata]     securityProtocol = plaintext
     val topicMetadata = metadataCache.getTopicMetadata(Set(Topic.GroupMetadataTopicName), securityProtocol)
     //todo 获取或创建内部主题
     topicMetadata.headOption.getOrElse(createGroupMetadataTopic())
   }
 
+  //获取主题元数据
   private def getTopicMetadata(topics: Set[String], securityProtocol: SecurityProtocol, errorUnavailableEndpoints: Boolean): Seq[MetadataResponse.TopicMetadata] = {
     val topicResponses = metadataCache.getTopicMetadata(topics, securityProtocol, errorUnavailableEndpoints)
     if (topics.isEmpty || topicResponses.size == topics.size) {
@@ -1034,6 +1036,7 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
       val offsetsTopicMetadata : MetadataResponse.TopicMetadata = getOrCreateGroupMetadataTopic(request.securityProtocol)
 
       val responseBody = if (offsetsTopicMetadata.error != Errors.NONE) {
+        //组协调者不可用
         new GroupCoordinatorResponse(Errors.GROUP_COORDINATOR_NOT_AVAILABLE.code, Node.noNode)
       } else {
         //todo 找到分区对应的leader所在的broker,即是组协调者

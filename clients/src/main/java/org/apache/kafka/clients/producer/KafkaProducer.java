@@ -604,7 +604,7 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
                  *      如果批次满了,或者新创建出来一个批次,那么就唤醒sender线程,它才是真正发送数据的线程
                  *      生产者的主线程获取元数据,将消息缓存,然后唤醒sender线程,发送数据的工作由sender完成
                  */
-                this.sender.wakeup();//初始化一个sender线程
+                this.sender.wakeup();
             }
             return result.future;
             // handling exceptions and record the errors; 处理异常并记录错误；

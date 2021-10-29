@@ -19,12 +19,9 @@ package kafka.controller
 import collection._
 import collection.JavaConversions._
 import java.util.concurrent.atomic.AtomicBoolean
-
-import kafka.cluster.Broker
 import kafka.common.{StateChangeFailedException, TopicAndPartition}
 import kafka.utils.{Logging, ReplicationUtils, ZkUtils}
 import org.I0Itec.zkclient.IZkChildListener
-import org.apache.log4j.Logger
 import kafka.controller.Callbacks._
 import kafka.utils.CoreUtils._
 

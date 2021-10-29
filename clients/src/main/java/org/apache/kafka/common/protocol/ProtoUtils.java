@@ -49,6 +49,7 @@ public class ProtoUtils {
     }
 
     public static Schema responseSchema(int apiKey, int version) {
+        // Protocol.RESPONSES  =   REQUESTS[ApiKeys.PRODUCE.id] = PRODUCE_REQUEST  ...;
         return schemaFor(Protocol.RESPONSES, apiKey, version);
     }
 
