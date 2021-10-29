@@ -73,9 +73,13 @@ public class Schema extends Type {
     @Override
     public Struct read(ByteBuffer buffer) {
         Object[] objects = new Object[fields.length];
+        Field field = null;
+        Type type = null;
         for (int i = 0; i < fields.length; i++) {
             try {
-                objects[i] = fields[i].type.read(buffer);
+                field = fields[i];
+                type = field.type;
+                objects[i] = type.read(buffer);
             } catch (Exception e) {
                 throw new SchemaException("Error reading field '" + fields[i].name +
                                           "': " +

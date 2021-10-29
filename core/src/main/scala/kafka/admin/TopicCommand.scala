@@ -33,7 +33,7 @@ import scala.collection.JavaConversions._
 import scala.collection._
 import org.apache.kafka.clients.consumer.{ConsumerConfig => NewConsumerConfig}
 
-//--zookeeper hadoop5:2181 --partitions 3 --replication-factor 2 --create --topic first
+//--zookeeper localhost:2181 --partitions 2 --replication-factor 1 --create --topic first
 object TopicCommand extends Logging {
 
   def main(args: Array[String]): Unit = {

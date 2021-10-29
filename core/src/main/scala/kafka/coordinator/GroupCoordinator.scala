@@ -624,7 +624,6 @@ class GroupCoordinator(val brokerId: Int,
     val memberKey = MemberKey(member.groupId, member.memberId)
     //完成心态
     heartbeatPurgatory.checkAndComplete(memberKey)
-
     // 下一次心跳时间
     val newHeartbeatDeadline = member.latestHeartbeat + member.sessionTimeoutMs
     val delayedHeartbeat = new DelayedHeartbeat(this, group, member, newHeartbeatDeadline, member.sessionTimeoutMs)

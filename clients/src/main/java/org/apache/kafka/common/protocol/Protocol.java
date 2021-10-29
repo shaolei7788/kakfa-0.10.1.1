@@ -918,7 +918,9 @@ public class Protocol {
 
     /* an array of all requests and responses with all schema versions; a null value in the inner array means that the
      * particular version is not supported */
+    //请求Schema
     public static final Schema[][] REQUESTS = new Schema[ApiKeys.MAX_API_KEY + 1][];
+    //响应Schema
     public static final Schema[][] RESPONSES = new Schema[ApiKeys.MAX_API_KEY + 1][];
     public static final short[] MIN_VERSIONS = new short[ApiKeys.MAX_API_KEY + 1];
 

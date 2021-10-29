@@ -36,3 +36,25 @@ private static ByteBuffer[] sizeDelimit(ByteBuffer[] buffers) {
 	System.arraycopy(buffers, 0, delimited, 1, buffers.length);
 	return delimited;
 }
+
+//针对响应主题元数据
+"brokers" -> {Field@1485}
+"cluster_id" -> {Field@1483}
+"controller_id" -> {Field@1487}
+"topic_metadata" -> {Field@1481}
+
+
+public static final Schema METADATA_RESPONSE_V2 = new Schema(
+// ArrayOf 数组
+new Field("brokers", new ArrayOf(METADATA_BROKER_V1),"Host and port information for all brokers."),
+new Field("cluster_id", NULLABLE_STRING,"The cluster id that this broker belongs to."),
+new Field("controller_id", INT32,"The broker id of the controller broker."),
+new Field("topic_metadata", new ArrayOf(TOPIC_METADATA_V1)));
+
+String name, Type type, String doc
+
+new Schema(
+new Field("node_id", INT32, "The broker id."),
+new Field("host", STRING, "The hostname of the broker."),
+new Field("port", INT32,"The port on which the broker accepts requests."),
+new Field("rack", NULLABLE_STRING, "The rack of the broker."));

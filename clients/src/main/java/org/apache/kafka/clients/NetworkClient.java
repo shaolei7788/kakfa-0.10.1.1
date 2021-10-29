@@ -21,6 +21,8 @@ import org.apache.kafka.common.network.Send;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.protocol.ProtoUtils;
+import org.apache.kafka.common.protocol.Protocol;
+import org.apache.kafka.common.protocol.types.Schema;
 import org.apache.kafka.common.protocol.types.Struct;
 import org.apache.kafka.common.requests.*;
 import org.apache.kafka.common.utils.Time;
@@ -440,7 +442,8 @@ public class NetworkClient implements KafkaClient {
         short apiKey = requestHeader.apiKey();
         short apiVer = requestHeader.apiVersion();
         //todo 解析响应buffer,获取响应体  ProtoUtils.responseSchema(apiKey, apiVer) 获取指定apikey对应的Schema
-        Struct responseBody = ProtoUtils.responseSchema(apiKey, apiVer).read(responseBuffer);
+        Schema schema = ProtoUtils.responseSchema(apiKey, apiVer);
+        Struct responseBody = schema.read(responseBuffer);
         correlate(requestHeader, responseHeader);
         return responseBody;
     }
