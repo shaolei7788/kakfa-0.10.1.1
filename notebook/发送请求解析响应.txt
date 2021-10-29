@@ -1,0 +1,38 @@
+private ClientRequest request(long now, String node, MetadataRequest metadata) {
+	// 三个参数依次为  String destination, RequestHeader header, Struct body
+	RequestSend send = new RequestSend(node, nextRequestHeader(ApiKeys.METADATA), metadata.toStruct());
+	return new ClientRequest(now, true, send, null, true);
+}
+
+ClientRequest clientRequest = new ClientRequest(now, true, send, null, true);
+
+header = new RequestHeader(key.id, clientId, correlation++)
+
+//body
+struct.set(TOPICS_KEY_NAME, topics.toArray());
+
+
+//序列化请求头跟请求体
+public static ByteBuffer serialize(RequestHeader header, Struct body) {
+	ByteBuffer buffer = ByteBuffer.allocate(header.sizeOf() + body.sizeOf());
+	header.writeTo(buffer);
+	body.writeTo(buffer);
+	//todo 重置position = 0
+	buffer.rewind();
+	return buffer;
+}
+
+//delimit 划界,界定
+private static ByteBuffer[] sizeDelimit(ByteBuffer[] buffers) {
+	int size = 0;
+	for (int i = 0; i < buffers.length; i++)
+		size += buffers[i].remaining();
+	ByteBuffer[] delimited = new ByteBuffer[buffers.length + 1];
+	//分配四个字节 用于存数据大小
+	delimited[0] = ByteBuffer.allocate(4);
+	//todo 数据大小
+	delimited[0].putInt(size);
+	delimited[0].rewind();
+	System.arraycopy(buffers, 0, delimited, 1, buffers.length);
+	return delimited;
+}
