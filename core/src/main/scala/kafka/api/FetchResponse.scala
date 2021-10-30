@@ -56,6 +56,7 @@ case class FetchResponsePartitionData(error: Short = Errors.NONE.code, hw: Long 
 class PartitionDataSend(val partitionId: Int,
                         val partitionData: FetchResponsePartitionData) extends Send {
   private val emptyBuffer = ByteBuffer.allocate(0)
+  //消息集大小
   private val messageSize = partitionData.messages.sizeInBytes
   private var messagesSentSize = 0
   private var pending = false
@@ -77,6 +78,7 @@ class PartitionDataSend(val partitionId: Int,
 
   //channel = PlaintextTransportLayer
   override def writeTo(channel: GatheringByteChannel): Long = {
+    //写入的字节数大小
     var written = 0L
     if (buffer.hasRemaining) {
       //上面rewind后，缓冲区定位到初始位置，即还有剩余空间，开始写到通道
@@ -85,6 +87,7 @@ class PartitionDataSend(val partitionId: Int,
     }
     //头部写完后，才会开始发送消息集的内容
     if (!buffer.hasRemaining) {
+      //    messageSize = 消息集大小
       if (messagesSentSize < messageSize) {
         //todo partitionData.messages = FileMessageSet  这里面采用了零拷贝的方式 transferTo
         val bytesSent = partitionData.messages.writeTo(channel, messagesSentSize, messageSize - messagesSentSize)
@@ -148,7 +151,7 @@ class TopicDataSend(val dest: String, val topicData: TopicData) extends Send {
   buffer.putInt(topicData.partitionData.size)
   buffer.rewind()
 
-  //todo
+  //todo  PartitionDataSend
   private val sends = new MultiSend(dest, JavaConversions.seqAsJavaList(topicData.partitionData.toList.map(d => new PartitionDataSend(d._1, d._2))))
 
   override def writeTo(channel: GatheringByteChannel): Long = {

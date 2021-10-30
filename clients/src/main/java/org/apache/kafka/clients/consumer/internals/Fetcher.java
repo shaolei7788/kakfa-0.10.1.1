@@ -674,7 +674,6 @@ public class Fetcher<K, V> {
                     //todo 将fetch相同的node 放在一个key里
                     fetchable.put(node, fetch);
                 }
-
                 long position = this.subscriptions.position(partition);
                 fetch.put(partition, new FetchRequest.PartitionData(position, this.fetchSize));
                 log.trace("Added fetch request for partition {} at offset {}", partition, position);

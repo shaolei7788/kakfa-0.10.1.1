@@ -219,7 +219,6 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
             throw new IllegalStateException("Coordinator selected invalid assignment protocol: " + assignmentStrategy);
         //反序列化分区分配的结果
         Assignment assignment = ConsumerProtocol.deserializeAssignment(assignmentBuffer);
-
         // set the flag to refresh last committed offsets
         //todo 将needsFetchCommittedOffsets = true ,允许从服务端获取最近一次提交的offset
         subscriptions.needRefreshCommits();
@@ -229,9 +228,8 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
         //一个空实现
         assignor.onAssignment(assignment);
         // reschedule the auto commit starting from now
-        //下次自动提交戒指时间
+        //下次自动提交截止时间
         this.nextAutoCommitDeadline = time.milliseconds() + autoCommitIntervalMs;
-
         // execute the user's callback after rebalance
         ConsumerRebalanceListener listener = subscriptions.listener();
         log.info("Setting newly assigned partitions {} for group {}", subscriptions.assignedPartitions(), groupId);
@@ -363,7 +361,6 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
             log.error("User provided listener {} for group {} failed on partition revocation",
                     listener.getClass().getName(), groupId, e);
         }
-
         isLeader = false;
         //重置消费者组订阅的主题
         subscriptions.resetGroupSubscription();

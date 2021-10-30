@@ -27,6 +27,14 @@ import LogConfig._
 import org.apache.kafka.common.utils.Utils
 import org.apache.kafka.common.security.JaasUtils
 
+
+// {
+//   "version":1,
+//   "partitions":[
+//    {"topic":"test","partition":0,"replicas":[4,5,6]}
+//    {"topic":"test","partition":1,"replicas":[1,2,3]}
+//   ]
+// }
 object ReassignPartitionsCommand extends Logging {
 
   def main(args: Array[String]): Unit = {

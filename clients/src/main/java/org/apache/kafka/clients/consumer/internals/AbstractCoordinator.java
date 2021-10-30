@@ -47,6 +47,8 @@ import org.apache.kafka.common.requests.SyncGroupResponse;
 import org.apache.kafka.common.utils.Time;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import sun.plugin2.main.server.HeartbeatThread;
+
 import java.io.Closeable;
 import java.nio.ByteBuffer;
 import java.util.Collections;
@@ -319,7 +321,7 @@ public abstract class AbstractCoordinator implements Closeable {
                 onJoinPrepare(generation.generationId, generation.memberId);
                 needsJoinPrepare = false;
             }
-            //todo 核心 发送加入group请求  如果发送失败后，会发送多次加入组请求
+            //todo 核心 发送加入group请求  如果发送失败后，会发送多次加入组请求，成功加入组后才开始心跳
             RequestFuture<ByteBuffer> future = initiateJoinGroup();
             //同步阻塞
             client.poll(future);
@@ -328,7 +330,7 @@ public abstract class AbstractCoordinator implements Closeable {
             //加入group成功
             if (future.succeeded()) {
                 needsJoinPrepare = true;
-                //todo 完成加入，也只会调用一次onPartitionAssigned
+                //todo 完成加入，也只会调用一次onPartitionAssigned  ConsumerCoordinator#onJoinComplete
                 onJoinComplete(generation.generationId, generation.memberId, generation.protocol, future.value());
             } else {
                 RuntimeException exception = future.exception();
@@ -357,7 +359,7 @@ public abstract class AbstractCoordinator implements Closeable {
             // fence off the heartbeat thread explicitly so that it cannot interfere with the join group.
             // Note that this must come after the call to onJoinPrepare since we must be able to continue
             // sending heartbeats if that callback takes some time.
-            //停止心跳线程
+            //todo 停止心跳线程
             disableHeartbeatThread();
             state = MemberState.REBALANCING;
             //todo 1 发送加入group请求 ApiKeys.JOIN_GROUP 里面有个回调函数 响应信息会返回那个是leader consumer
@@ -373,8 +375,10 @@ public abstract class AbstractCoordinator implements Closeable {
                     synchronized (AbstractCoordinator.this) {
                         log.info("Successfully joined group {} with generation {}", groupId, generation.generationId);
                         state = MemberState.STABLE;
-                        if (heartbeatThread != null)
+                        if (heartbeatThread != null) {
+                            //todo 心跳启动
                             heartbeatThread.enable();
+                        }
                     }
                 }
 

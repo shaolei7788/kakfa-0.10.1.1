@@ -84,8 +84,9 @@ public class MultiSend implements Send {
             totalWritten += written;
             totalWrittenPerCall += written;
             sendComplete = current.completed();
-            if (sendComplete)
+            if (sendComplete) {
                 nextSendOrDone();
+            }
         } while (!completed() && sendComplete);
         if (log.isTraceEnabled())
             log.trace("Bytes written as part of multisend call : " + totalWrittenPerCall +  "Total bytes written so far : " + totalWritten + "Expected bytes to write : " + size);
@@ -94,9 +95,10 @@ public class MultiSend implements Send {
 
     // update current if there's a next Send, mark sends as done if there isn't
     private void nextSendOrDone() {
-        if (sendsIterator.hasNext())
+        if (sendsIterator.hasNext()) {
             current = sendsIterator.next();
-        else
+        } else {
             doneSends = true;
+        }
     }
 }

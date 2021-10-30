@@ -225,7 +225,7 @@ class LogSegment(
         min(min(maxPosition, endPosition) - startPosition.position, adjustedMaxSize).toInt
     }
     //todo FetchDataInfo是样例类   Log.read 读取日志文件得到的文件消息集视图
-    // Log.read 按照读取起始位置和长度生成一个分区的FileMessageSet对象，并没有真正的读取数据到内存
+    // Log.read 按照读取起始位置和长度生成一个分区的FileMessageSet对象，并没有真正的读取数据到内存    incomplete 不完整的
     FetchDataInfo(offsetMetadata, log.read(startPosition.position, length), firstMessageSetIncomplete = adjustedMaxSize < messageSetSize)
   }
 

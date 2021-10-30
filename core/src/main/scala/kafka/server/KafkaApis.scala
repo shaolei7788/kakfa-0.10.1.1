@@ -516,7 +516,7 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
     def sendResponseCallback(responsePartitionData: Seq[(TopicAndPartition, FetchResponsePartitionData)]) {
 
       val convertedPartitionData =
-        // Need to down-convert message when consumer only takes magic value 0.
+        // fetchRequest.versionId = 2
         if (fetchRequest.versionId <= 1) {
           responsePartitionData.map { case (tp, data) =>
             // We only do down-conversion when:
@@ -568,8 +568,7 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
         quotas.leader.record(responseSize)
         fetchResponseCallback(0)
       } else {
-        val responseSize = FetchResponse.responseSize(FetchResponse.batchByTopic(mergedPartitionData),
-          fetchRequest.versionId)
+        val responseSize = FetchResponse.responseSize(FetchResponse.batchByTopic(mergedPartitionData), fetchRequest.versionId)
         quotas.fetch.recordAndMaybeThrottle(request.session.sanitizedUser, fetchRequest.clientId, responseSize, fetchResponseCallback)
       }
     }
@@ -577,8 +576,7 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
     if (authorizedRequestInfo.isEmpty)
       sendResponseCallback(Seq.empty)
     else {
-      //todo
-      // call the replica manager to fetch messages from the local replica
+      //todo 调用副本管理器拉取数据
       replicaManager.fetchMessages(
         fetchRequest.maxWait.toLong,//最长等待时间
         fetchRequest.replicaId,//备份副本编号，消费者没有该编号

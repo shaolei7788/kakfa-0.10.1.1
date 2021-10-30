@@ -542,7 +542,7 @@ class ReplicaManager(val config: KafkaConfig,
     // if the fetch comes from the follower,
     // update its corresponding log end offset
     if(Request.isValidBrokerId(replicaId)) {
-      //todo 更新follower日志读取的结果
+      //todo 更新follower日志读取的结果  1 更新备份副本的偏移量 2 可能扩张ISR集合 3 尝试完成被延迟的生产请求
       updateFollowerLogReadResults(replicaId, logReadResults)
     }
 
@@ -658,7 +658,6 @@ class ReplicaManager(val config: KafkaConfig,
         }
         //是否读取到log的最后一条消息
         val readToEndOfLog = initialLogEndOffset.messageOffset - logReadInfo.fetchOffsetMetadata.messageOffset <= 0
-
         LogReadResult(logReadInfo, localReplica.highWatermark.messageOffset, fetchSize, readToEndOfLog, None)
       } catch {
         // NOTE: Failed fetch requests metric is not incremented for known exceptions since it
