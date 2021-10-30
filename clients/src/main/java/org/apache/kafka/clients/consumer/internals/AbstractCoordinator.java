@@ -415,7 +415,6 @@ public abstract class AbstractCoordinator implements Closeable {
                 protocolType(),//Consumer Group实现的协议 ，默认是consumer
                 //协议元数据信息
                 metadata());
-
         log.debug("Sending JoinGroup ({}) to coordinator {}", request, this.coordinator);
         //todo 发送ApiKeys.JOIN_GROUP请求  send是 RequestFutureCompletionHandler类的future对象
         RequestFuture<ClientResponse> send = client.send(coordinator, ApiKeys.JOIN_GROUP, request);
