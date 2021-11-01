@@ -207,6 +207,7 @@ public class Compressor {
         // put a record as un-compressed into the underlying stream
         long crc = Record.computeChecksum(timestamp, key, value, type, valueOffset, valueSize);
         byte attributes = Record.computeAttributes(type);
+        // 按指定格式放入数据
         putRecord(crc, attributes, timestamp, key, value, valueOffset, valueSize);
         return crc;
     }

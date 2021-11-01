@@ -169,7 +169,7 @@ public class Selector implements Selectable {
         //获取到SocketChannel
         SocketChannel socketChannel = SocketChannel.open();
         socketChannel.configureBlocking(false);
-        //对生产者而已自己是客户端
+        //生产者自己是客户端
         Socket socket = socketChannel.socket();
         socket.setKeepAlive(true);
         //设置一些参数
@@ -594,9 +594,9 @@ public class Selector implements Selectable {
      */
     private void addToStagedReceives(KafkaChannel channel, NetworkReceive receive) {
         //channel代表的是一个网络连接,一台kafka的主机就对应了一个channel连接
-        if (!stagedReceives.containsKey(channel))
+        if (!stagedReceives.containsKey(channel)) {
             stagedReceives.put(channel, new ArrayDeque<NetworkReceive>());
-
+        }
         Deque<NetworkReceive> deque = stagedReceives.get(channel);
         //往队列里存放接收到的响应
         deque.add(receive);

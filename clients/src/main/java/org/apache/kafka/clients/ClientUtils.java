@@ -78,9 +78,11 @@ public class ClientUtils {
      * @return configured ChannelBuilder based on the configs.
      */
     public static ChannelBuilder createChannelBuilder(Map<String, ?> configs) {
+        // SECURITY_PROTOCOL_CONFIG = PLAINTEXT
         SecurityProtocol securityProtocol = SecurityProtocol.forName((String) configs.get(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG));
         if (!SecurityProtocol.nonTestingValues().contains(securityProtocol))
             throw new ConfigException("Invalid SecurityProtocol " + securityProtocol);
+        // SASL_MECHANISM = GSSAPI
         String clientSaslMechanism = (String) configs.get(SaslConfigs.SASL_MECHANISM);
         return ChannelBuilders.create(securityProtocol, Mode.CLIENT, LoginType.CLIENT, configs, clientSaslMechanism, true);
     }

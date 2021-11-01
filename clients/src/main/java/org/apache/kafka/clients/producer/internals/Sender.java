@@ -244,10 +244,8 @@ public class Sender implements Runnable {
          *      优点: 1.减少了网络传输的请求次数 2.增加吞吐量
          *      kafka从细节上考虑性能优化
          */
-        // create produce requests
         // 创建一个生产请求,但是,网络没有建立的话,这里的代码是不会执行的
         // 读取记录收集器，返回每个主副本节点对应的批次记录列表
-        //
         Map<Integer, List<RecordBatch>> batches = this.accumulator.drain(cluster,//元数据
                                                                          result.readyNodes,//接收消息的节点
                                                                          this.maxRequestSize,//批次的大小

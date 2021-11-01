@@ -181,21 +181,16 @@ public class Protocol {
     public static final Schema PRODUCE_RESPONSE_V2 = new Schema(new Field("responses",
                                                                 new ArrayOf(new Schema(new Field("topic", STRING),
                                                                                        new Field("partition_responses",
-                                                                                       new ArrayOf(new Schema(new Field("partition",
-                                                                                                                        INT32),
-                                                                                                              new Field("error_code",
-                                                                                                                        INT16),
-                                                                                                              new Field("base_offset",
-                                                                                                                        INT64),
-                                                                                                              new Field("timestamp",
-                                                                                                                        INT64,
+                                                                                       new ArrayOf(new Schema(new Field("partition", INT32),
+                                                                                                              new Field("error_code", INT16),
+                                                                                                              new Field("base_offset", INT64),
+                                                                                                              new Field("timestamp", INT64,
                                                                                                                         "The timestamp returned by broker after appending the messages. " +
                                                                                                                             "If CreateTime is used for the topic, the timestamp will be -1. " +
                                                                                                                             "If LogAppendTime is used for the topic, the timestamp will be " +
                                                                                                                             "the broker local time when the messages are appended."))))))),
                                                                 new Field("throttle_time_ms",
-                                                                          INT32,
-                                                                          "Duration in milliseconds for which the request was throttled" +
+                                                                          INT32, "Duration in milliseconds for which the request was throttled" +
                                                                               " due to quota violation. (Zero if the request did not violate any quota.)",
                                                                           0));
     public static final Schema[] PRODUCE_REQUEST = new Schema[] {PRODUCE_REQUEST_V0, PRODUCE_REQUEST_V1, PRODUCE_REQUEST_V2};
