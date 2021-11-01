@@ -153,6 +153,10 @@ public final class BufferPool {
                     try {
                         //在等待别人释放内存
                         //两种情况下会继续执行: 1.时间到了 2.被人唤醒
+                        // 1 是超时    await 返回 false
+                        // 2 是被人唤醒 await 返回 true
+                        // todo 对应 BufferPool#deallocate
+                        //  Condition moreMem = this.waiters.peekFirst().signal()  可能被这里唤醒
                         waitingTimeElapsed = !moreMemory.await(remainingTimeToBlockNs, TimeUnit.NANOSECONDS);
                     } catch (InterruptedException e) {
                         this.waiters.remove(moreMemory);
@@ -164,6 +168,7 @@ public final class BufferPool {
                     }
 
                     if (waitingTimeElapsed) {
+                        //在maxTimeToBlockMs时间内还没加入，则移除moreMemory，并抛异常
                         this.waiters.remove(moreMemory);
                         throw new TimeoutException("Failed to allocate memory within the configured max blocking time " + maxTimeToBlockMs + " ms.");
                     }
@@ -188,9 +193,6 @@ public final class BufferPool {
                         accumulated += got;
                     }
                 }
-
-                // remove the condition for this thread to let the next thread
-                // in line start getting memory
                 Condition removed = this.waiters.removeFirst();
                 if (removed != moreMemory)
                     throw new IllegalStateException("Wrong condition: this shouldn't happen.");
@@ -198,10 +200,12 @@ public final class BufferPool {
                 // signal any additional waiters if there is more memory left
                 // over for them
                 if (this.availableMemory > 0 || !this.free.isEmpty()) {
-                    if (!this.waiters.isEmpty())
+                    //如果存在其他排队线程
+                    if (!this.waiters.isEmpty()) {
+                        //则通知下一个排队线程进行缓冲分配
                         this.waiters.peekFirst().signal();
+                    }
                 }
-
                 // unlock and return the buffer
                 lock.unlock();
                 if (buffer == null)
