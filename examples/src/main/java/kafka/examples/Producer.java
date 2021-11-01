@@ -51,11 +51,10 @@ public class Producer {
         long startTime = System.currentTimeMillis();
         for (int i = 0; i < 10; i++) {
             //同步发送
-            producer.send(new ProducerRecord<String, String>(topic,"hello" +i));
-
+            //producer.send(new ProducerRecord<String, String>(topic,"hello" +i));
             //异步发送
-//            producer.send(new ProducerRecord<>(topic, String.valueOf(i), "hello" + i),
-//                    new DemoCallBack(startTime, String.valueOf(i), "hello" + i));
+            producer.send(new ProducerRecord<>(topic, String.valueOf(i), "hello" + i),
+                    new DemoCallBack(startTime, String.valueOf(i), "hello" + i));
         }
 
         producer.close();
@@ -73,7 +72,6 @@ class DemoCallBack implements Callback {
         this.key = key;
         this.message = message;
     }
-
 
     public void onCompletion(RecordMetadata metadata, Exception exception) {
         long elapsedTime = System.currentTimeMillis() - startTime;

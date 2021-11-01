@@ -22,8 +22,8 @@ package org.apache.kafka.common.record;
  */
 public interface Records extends Iterable<LogEntry> {
 
-    int SIZE_LENGTH = 4;
     int OFFSET_LENGTH = 8;
+    int SIZE_LENGTH = 4;
     int LOG_OVERHEAD = SIZE_LENGTH + OFFSET_LENGTH;
 
     /**

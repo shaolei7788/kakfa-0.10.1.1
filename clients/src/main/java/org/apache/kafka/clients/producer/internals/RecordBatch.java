@@ -79,6 +79,7 @@ public final class RecordBatch {
         } else {
             //TODO 将数据写入RecordBatch
             long checksum = this.records.append(offsetCounter++, timestamp, key, value);
+            //该批最大的Record的字节数
             this.maxRecordSize = Math.max(this.maxRecordSize, Record.recordSize(key, value));
             this.lastAppendTime = now;
             FutureRecordMetadata future = new FutureRecordMetadata(this.produceFuture, this.recordCount,
@@ -89,6 +90,7 @@ public final class RecordBatch {
                 //有回调方法的才加入到thunks里
                 thunks.add(new Thunk(callback, future));
             }
+            //记录了保存的Record个数
             this.recordCount++;
             return future;
         }
@@ -199,7 +201,7 @@ public final class RecordBatch {
             //方法里面传入一个TimeoutException异常
             //TODO 处理超时的批次
             this.done(-1L, Record.NO_TIMESTAMP,
-                      new TimeoutException("Expiring " + recordCount + " record(s) for " + topicPartition + " due to " + errorMessage));
+                    new TimeoutException("Expiring " + recordCount + " record(s) for " + topicPartition + " due to " + errorMessage));
         }
 
         return expire;

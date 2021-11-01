@@ -632,6 +632,7 @@ public class NetworkClient implements KafkaClient {
             // should we update our metadata?  调用doSend()调用waitOnMetadata方法 awaitUpdate 会 将 needUpdate改成true
             long timeToNextMetadataUpdate = metadata.timeToNextUpdate(now);
             // metadata.refreshBackoff() = 100
+            //第一次进这里 timeToNextReconnectAttempt = 0
             long timeToNextReconnectAttempt = Math.max(this.lastNoNodeAvailableMs + metadata.refreshBackoff() - now, 0);
             long waitForMetadataFetch = this.metadataFetchInProgress ? Integer.MAX_VALUE : 0;
             // if there is no node available to connect, back off refreshing metadata
@@ -643,7 +644,6 @@ public class NetworkClient implements KafkaClient {
                 //TODO 这个方法里面会封装请求
                 maybeUpdate(now, node);
             }
-
             return metadataTimeout;
         }
 

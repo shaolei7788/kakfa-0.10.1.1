@@ -47,7 +47,6 @@ import org.apache.kafka.common.requests.SyncGroupResponse;
 import org.apache.kafka.common.utils.Time;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import sun.plugin2.main.server.HeartbeatThread;
 
 import java.io.Closeable;
 import java.nio.ByteBuffer;

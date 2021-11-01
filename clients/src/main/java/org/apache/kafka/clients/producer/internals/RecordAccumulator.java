@@ -60,7 +60,7 @@ public final class RecordAccumulator {
     private final long lingerMs;
     //重试时间的间隔 100ms
     private final long retryBackoffMs;
-    //内存池
+    //空闲的内存池
     private final BufferPool free;
     private final Time time;
     //当前分区对应的存储队列 <封装消息主题和分区号的对象,消息>
@@ -192,7 +192,8 @@ public final class RecordAccumulator {
              * 这儿会创建出来一个空的队列
              */
             Deque<RecordBatch> dq = getOrCreateDeque(tp);//根据消息的主题和分区信息,去获取到消息要发往的队列
-            synchronized (dq) {//分段加锁,目的是缩小锁的粒度,因为锁与锁之间还有其他的业务
+            //分段加锁,目的是缩小锁的粒度,因为锁与锁之间还有其他的业务
+            synchronized (dq) {
                 //首先进来的是第一个线程
                 if (closed)
                     throw new IllegalStateException("Cannot send after the producer is closed.");

@@ -229,7 +229,7 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
             List<MetricsReporter> reporters = config.getConfiguredInstances(ProducerConfig.METRIC_REPORTER_CLASSES_CONFIG,MetricsReporter.class);
             reporters.add(new JmxReporter(JMX_PREFIX));
             this.metrics = new Metrics(metricConfig, reporters, time);
-            //设置分区器,初始化流程中,默认会有一个分区器,目的是计算消息发送到服务端哪个地方
+            //设置分区器,初始化流程中,默认会有一个分区器(DefaultPartitioner),目的是计算消息发送到服务端哪个地方
             //kafka生产者要把一条消息发送到服务端的哪一个地方,需要借助分区器进行计算
             this.partitioner = config.getConfiguredInstance(ProducerConfig.PARTITIONER_CLASS_CONFIG, Partitioner.class);
             /**
@@ -321,6 +321,7 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
                         ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG);
                 this.requestTimeoutMs = config.getInt(ProducerConfig.TIMEOUT_CONFIG);
             } else {
+                // request.timeout.ms = 30s
                 this.requestTimeoutMs = config.getInt(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG);
             }
 
@@ -328,7 +329,7 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
             this.accumulator = new RecordAccumulator(config.getInt(ProducerConfig.BATCH_SIZE_CONFIG),
                     this.totalMemorySize,//32m
                     this.compressionType,
-                    //等待批量数据的时间，超过此时间，未达到批量发送基本单位也发送
+                    //等待批量数据的时间，超过此时间，未达到批量发送基本单位也发送    linger 继续存留，逗留
                     config.getLong(ProducerConfig.LINGER_MS_CONFIG),//0
                     retryBackoffMs,//100ms
                     metrics,
@@ -336,9 +337,9 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
 
             //通过参数获取 bootstrap.servers
             List<InetSocketAddress> addresses = ClientUtils.parseAndValidateAddresses(config.getList(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG));
+            //更新元数据
             this.metadata.update(Cluster.bootstrap(addresses), time.milliseconds());
             ChannelBuilder channelBuilder = ClientUtils.createChannelBuilder(config.values());
-            //TODO 初始化一个重要的管理网络的组件,整个kafka的网络都是由它来负责的
             /**
              * (1). connections.max.idle.ms:默认值是9分钟
              *      一个网络连接的最大空闲时间,超过这个空闲时间,就会关闭这个网络连接
@@ -348,6 +349,7 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
              * (3). send.buffer.bytes:socket发送数据的缓冲区的大小,默认值是128K
              * (4). receive.buffer.bytes:socket接收数据的缓冲区的大小,默认值是32K
              */
+            //TODO 初始化一个重要的管理网络的组件,整个kafka的网络都是由它来负责的
             NetworkClient client = new NetworkClient(
                     // connections.max.idle.ms = 9 * 60 * 1000
                     new Selector(config.getLong(ProducerConfig.CONNECTIONS_MAX_IDLE_MS_CONFIG),
@@ -562,7 +564,7 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
              */
             //计算发送的消息应该发到哪个分区 如果记录有分区，则返回值，否则调用配置的分区器类来计算分区。    todo 讲解
             int partition = partition(record, serializedKey, serializedValue, cluster);
-            //计算发送消息的大小
+            //计算发送消息的大小     完整的一条消息大小 = 8 + 4 + 22 + keySize + valueSize = 34 + keySize + valueSize
             int serializedSize = Records.LOG_OVERHEAD + Record.recordSize(serializedKey, serializedValue);
             /**
              *  步骤四:
@@ -700,10 +702,10 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
         // is stale and the number of partitions for this topic has increased in the meantime.
         do {
             log.trace("Requesting metadata update for topic {}.", topic);
-            //1).获取当前元数据的版本
+            //1)获取当前元数据的版本
             //在Producer管理元数据的时候,对于他来说元数据是有版本号的
             //每次成功更新版本,版本号就会递增
-            //2).把needUpdate标识符设置为true
+            //2)把needUpdate标识符设置为true
             int version = metadata.requestUpdate();//得到的是更新元数据之前的版本号
             //todo 唤醒sender线程去获取元数据  这个地方很巧妙
             // 其他线程如果因为调用了selector.select()或者selector.select(long)这两个方法而阻塞，
@@ -950,8 +952,7 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
         //但是正常情况下,第一次进来的消息是没有分区号的
         //因为有重试机制,虽然第一次进来没有分区号,但是分区器会给一个,当重试的时候,就可以获取到了
         Integer partition = record.partition();
-        return partition != null ?
-                partition :
+        return partition != null ? partition :
                 //没有分区号的时候,使用分区器进行选择合适的分区
                 partitioner.partition(record.topic(), record.key(), serializedKey, record.value(), serializedValue, cluster);
     }

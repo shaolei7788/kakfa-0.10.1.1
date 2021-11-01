@@ -251,7 +251,7 @@ public final class Metadata {
                 }
             }
         }
-
+        //触发元数据监听器
         for (Listener listener: listeners) {
             listener.onMetadataUpdate(cluster);
         }
