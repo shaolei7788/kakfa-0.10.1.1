@@ -166,7 +166,6 @@ public final class BufferPool {
                         timeNs = Math.max(0L, endWaitNs - startWaitNs);
                         this.waitTime.record(timeNs, time.milliseconds());
                     }
-
                     if (waitingTimeElapsed) {
                         //在maxTimeToBlockMs时间内还没加入，则移除moreMemory，并抛异常
                         this.waiters.remove(moreMemory);
