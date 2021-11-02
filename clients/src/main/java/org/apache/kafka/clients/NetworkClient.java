@@ -474,6 +474,7 @@ public class NetworkClient implements KafkaClient {
      * @param responses The list of responses to update
      * @param now The current time
      */
+    //处理超时的请求
     private void handleTimedOutRequests(List<ClientResponse> responses, long now) {
         //获取到请求超时的broker集合
         List<String> nodeIds = this.inFlightRequests.getNodesWithTimedOutRequests(now, this.requestTimeoutMs);
