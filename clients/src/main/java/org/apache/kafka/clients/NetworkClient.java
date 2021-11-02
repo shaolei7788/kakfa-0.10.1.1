@@ -317,7 +317,7 @@ public class NetworkClient implements KafkaClient {
         //处理断开的连接
         handleDisconnections(responses, updatedNow);
         handleConnections();
-        //TODO 处理长时间没有接收到响应的请求
+        //TODO 处理长时间没有接收到响应的请求，并更新元数据
         handleTimedOutRequests(responses, updatedNow);
 
         // 上面几个处理操作都会往 responses 中添加响应，有了响应后开始调用请求的回调函数
@@ -474,7 +474,7 @@ public class NetworkClient implements KafkaClient {
      * @param responses The list of responses to update
      * @param now The current time
      */
-    //处理超时的请求
+    //处理超时的请求，并更新元数据
     private void handleTimedOutRequests(List<ClientResponse> responses, long now) {
         //获取到请求超时的broker集合
         List<String> nodeIds = this.inFlightRequests.getNodesWithTimedOutRequests(now, this.requestTimeoutMs);
@@ -503,6 +503,7 @@ public class NetworkClient implements KafkaClient {
     private void handleCompletedSends(List<ClientResponse> responses, long now) {
         // if no response is expected then when the send is completed, return it
         for (Send send : this.selector.completedSends()) {
+            //获取最后一个发送的请求
             ClientRequest request = this.inFlightRequests.lastSent(send.destination());
             if (!request.expectResponse()) {
                 //todo 请求不期待响应   completeLastSent 最后一个完成发送请求 从队列中移除
