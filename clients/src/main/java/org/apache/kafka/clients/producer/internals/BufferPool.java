@@ -136,7 +136,7 @@ public final class BufferPool {
                 ByteBuffer buffer = null;
                 Condition moreMemory = this.lock.newCondition();
                 long remainingTimeToBlockNs = TimeUnit.MILLISECONDS.toNanos(maxTimeToBlockMs);
-                //等待被人释放内存 添加到最后  将阻塞线程对应的Condition加入队列 等待唤醒，唤醒的顺序根据入队顺序决定(先进先出)
+                //等待别人释放内存 添加到最后  将阻塞线程对应的Condition加入队列 等待唤醒，唤醒的顺序根据入队顺序决定(先进先出)
                 this.waiters.addLast(moreMemory);
                 // loop over and over until we have a buffer or have reserved
                 // enough memory to allocate one
@@ -152,7 +152,10 @@ public final class BufferPool {
                     boolean waitingTimeElapsed;
                     try {
                         //在等待别人释放内存
-                        //两种情况下会继续执行: 1.时间到了 2.被人唤醒
+                        //两种情况下会继续执行: 1.超时 2.被人唤醒
+                        // 1 超时    await 返回false
+                        // 2 被人唤醒 await 返回true
+                        //todo 对应 BufferPool#waiters.peekFirst().signal()
                         waitingTimeElapsed = !moreMemory.await(remainingTimeToBlockNs, TimeUnit.NANOSECONDS);
                     } catch (InterruptedException e) {
                         this.waiters.remove(moreMemory);

@@ -16,10 +16,7 @@
  */
 package kafka.examples;
 
-import org.apache.kafka.clients.producer.Callback;
-import org.apache.kafka.clients.producer.KafkaProducer;
-import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.clients.producer.*;
 
 import java.util.Properties;
 import java.util.concurrent.ExecutionException;
@@ -27,36 +24,39 @@ import java.util.concurrent.ExecutionException;
 public class Producer {
     private final KafkaProducer<String, String> producer;
     private final String topic;
-    private final Boolean isAsync;
 
     public static void main(String[] args) {
-        Producer producer = new Producer("first", false);
+        Producer producer = new Producer("second", false);
         producer.dowork();
-        System.out.println("发送完成");
     }
 
     public Producer(String topic, Boolean isAsync) {
         Properties props = new Properties();
-        props.put("bootstrap.servers", "localhost:9092");
+        props.put("bootstrap.servers", "hadoop1:9092");
         props.put("client.id", "DemoProducer");
+        //props.put(ProducerConfig.MAX_REQUEST_SIZE_CONFIG,10 *1024 * 2014 );
         //必须要指定
         props.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");
         props.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
         producer = new KafkaProducer<>(props);
         this.topic = topic;
-        this.isAsync = isAsync;
     }
 
     public void dowork() {
         long startTime = System.currentTimeMillis();
-        for (int i = 0; i < 10; i++) {
+        for (int i = 100; i < 200; i++) {
             //同步发送
             //producer.send(new ProducerRecord<String, String>(topic,"hello" +i));
             //异步发送
-            producer.send(new ProducerRecord<>(topic, String.valueOf(i), "hello" + i),
+            producer.send(new ProducerRecord<>(topic, "hello" + i),
                     new DemoCallBack(startTime, String.valueOf(i), "hello" + i));
-        }
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
 
+        }
         producer.close();
     }
 }
