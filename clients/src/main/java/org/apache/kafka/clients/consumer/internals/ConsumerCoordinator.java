@@ -143,6 +143,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
             //下次自动提交偏移量截止时间  autoCommitIntervalMs = 5000
             this.nextAutoCommitDeadline = time.milliseconds() + autoCommitIntervalMs;
         }
+        //更新元数据
         this.metadata.requestUpdate();
         //添加元数据监听器
         addMetadataListener();

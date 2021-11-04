@@ -665,6 +665,7 @@ public class Fetcher<K, V> {
             //获取分区的leader的broker节点
             Node node = cluster.leaderFor(partition);
             if (node == null) {
+                //todo 注意
                 metadata.requestUpdate();
             } else if (this.client.pendingRequestCount(node) == 0) {
                 // if there is a leader and no in-flight requests, issue a new fetch
@@ -751,8 +752,10 @@ public class Fetcher<K, V> {
                 }
             } else if (error == Errors.NOT_LEADER_FOR_PARTITION) {
                 log.debug("Error in fetch for partition {}: {}", tp, error.exceptionName());
+                System.out.println("NOT_LEADER_FOR_PARTITION");
                 this.metadata.requestUpdate();
             } else if (error == Errors.UNKNOWN_TOPIC_OR_PARTITION) {
+                System.out.println("NOT_LEADER_FOR_PARTITION");
                 log.warn("Received unknown topic or partition error in fetch for partition {}. The topic/partition " +
                         "may not exist or the user may not have Describe access to it", tp);
                 this.metadata.requestUpdate();

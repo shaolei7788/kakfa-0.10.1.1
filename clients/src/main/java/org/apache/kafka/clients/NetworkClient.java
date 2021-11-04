@@ -314,10 +314,10 @@ public class NetworkClient implements KafkaClient {
          */
         //处理完成接收
         handleCompletedReceives(responses, updatedNow);
-        //处理断开的连接
+        //todo 处理断开的连接  需特别留意，如果跟broker断开连接，会更新元数据   *********
         handleDisconnections(responses, updatedNow);
         handleConnections();
-        //TODO 处理长时间没有接收到响应的请求，并更新元数据
+        //TODO 处理长时间没有接收到响应的请求，会更新元数据   *********
         handleTimedOutRequests(responses, updatedNow);
 
         // 上面几个处理操作都会往 responses 中添加响应，有了响应后开始调用请求的回调函数

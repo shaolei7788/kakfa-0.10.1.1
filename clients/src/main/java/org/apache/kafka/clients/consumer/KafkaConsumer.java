@@ -890,6 +890,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
             log.debug("Subscribed to pattern: {}", pattern);
             this.subscriptions.subscribe(pattern, listener);
             this.metadata.needMetadataForAllTopics(true);
+            //更新元数据
             this.metadata.requestUpdate();
             this.coordinator.updatePatternSubscription(metadata.fetch());
         } finally {
