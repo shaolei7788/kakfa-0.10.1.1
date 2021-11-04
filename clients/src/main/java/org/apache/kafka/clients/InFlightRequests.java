@@ -140,6 +140,7 @@ final class InFlightRequests {
      * @param requestTimeout max time to wait for the request to be completed
      * @return list of nodes
      */
+    //获取到请求超时的broker集合
     public List<String> getNodesWithTimedOutRequests(long now, int requestTimeout) {
         List<String> nodeIds = new LinkedList<>();
         for (Map.Entry<String, Deque<ClientRequest>> requestEntry : requests.entrySet()) {

@@ -136,7 +136,7 @@ public final class BufferPool {
                 ByteBuffer buffer = null;
                 Condition moreMemory = this.lock.newCondition();
                 long remainingTimeToBlockNs = TimeUnit.MILLISECONDS.toNanos(maxTimeToBlockMs);
-                //等待被人释放内存 添加到最后  将阻塞线程对应的Condition加入队列 等待唤醒，唤醒的顺序根据入队顺序决定(先进先出)
+                //等待别人释放内存 添加到最后  将阻塞线程对应的Condition加入队列 等待唤醒，唤醒的顺序根据入队顺序决定(先进先出)
                 this.waiters.addLast(moreMemory);
                 // loop over and over until we have a buffer or have reserved
                 // enough memory to allocate one
@@ -166,11 +166,12 @@ public final class BufferPool {
                         timeNs = Math.max(0L, endWaitNs - startWaitNs);
                         this.waitTime.record(timeNs, time.milliseconds());
                     }
+
                     if (waitingTimeElapsed) {
-                        //在maxTimeToBlockMs时间内还没加入，则移除moreMemory，并抛异常
                         this.waiters.remove(moreMemory);
                         throw new TimeoutException("Failed to allocate memory within the configured max blocking time " + maxTimeToBlockMs + " ms.");
                     }
+
                     remainingTimeToBlockNs -= timeNs;
                     // check if we can satisfy this request from the free list,
                     // otherwise allocate memory

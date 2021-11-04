@@ -506,7 +506,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
     private final ConsumerCoordinator coordinator;
     private final Deserializer<K> keyDeserializer;
     private final Deserializer<V> valueDeserializer;
-    //复制从服务端拉取数据
+    //负责从服务端拉取数据
     private final Fetcher<K, V> fetcher;
     private final ConsumerInterceptors<K, V> interceptors;
 
@@ -666,6 +666,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
                     config.getInt(ConsumerConfig.SEND_BUFFER_CONFIG),
                     config.getInt(ConsumerConfig.RECEIVE_BUFFER_CONFIG),
                     config.getInt(ConsumerConfig.REQUEST_TIMEOUT_MS_CONFIG), time);
+
             this.client = new ConsumerNetworkClient(netClient, metadata, time, retryBackoffMs,
                     config.getInt(ConsumerConfig.REQUEST_TIMEOUT_MS_CONFIG));
             //todo 偏移量重置策略 默认latest
@@ -676,7 +677,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
             List<PartitionAssignor> assignors = config.getConfiguredInstances(
                     ConsumerConfig.PARTITION_ASSIGNMENT_STRATEGY_CONFIG, PartitionAssignor.class);
 
-            //todo 与服务端的GroupCoordinator进行交互
+            //todo 与服务端的GroupCoordinator进行交互  里面有添加元数据监听器
             this.coordinator = new ConsumerCoordinator(this.client,
                     config.getString(ConsumerConfig.GROUP_ID_CONFIG),
                     config.getInt(ConsumerConfig.MAX_POLL_INTERVAL_MS_CONFIG),

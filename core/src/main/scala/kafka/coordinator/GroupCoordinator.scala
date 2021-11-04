@@ -364,6 +364,7 @@ class GroupCoordinator(val brokerId: Int,
       // the group is still loading, so respond just blindly
       responseCallback(Errors.NONE.code)
     } else {
+      // GroupMetadata
       groupManager.getGroup(groupId) match {
         case None =>
           responseCallback(Errors.UNKNOWN_MEMBER_ID.code)

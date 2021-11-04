@@ -33,10 +33,8 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Random;
+import java.text.SimpleDateFormat;
+import java.util.*;
 
 /**
  * A network client for asynchronous request/response network i/o. This is an internal class used to implement the
@@ -45,6 +43,8 @@ import java.util.Random;
  * This class is not thread-safe!
  */
 public class NetworkClient implements KafkaClient {
+
+    private static SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 
     private static final Logger log = LoggerFactory.getLogger(NetworkClient.class);
 
@@ -317,7 +317,7 @@ public class NetworkClient implements KafkaClient {
         //处理断开的连接
         handleDisconnections(responses, updatedNow);
         handleConnections();
-        //TODO 处理长时间没有接收到响应的请求
+        //TODO 处理长时间没有接收到响应的请求，并更新元数据
         handleTimedOutRequests(responses, updatedNow);
 
         // 上面几个处理操作都会往 responses 中添加响应，有了响应后开始调用请求的回调函数
@@ -474,8 +474,9 @@ public class NetworkClient implements KafkaClient {
      * @param responses The list of responses to update
      * @param now The current time
      */
+    //处理超时的请求，并更新元数据
     private void handleTimedOutRequests(List<ClientResponse> responses, long now) {
-        //获取到请求超时的主机
+        //获取到请求超时的broker集合
         List<String> nodeIds = this.inFlightRequests.getNodesWithTimedOutRequests(now, this.requestTimeoutMs);
         for (String nodeId : nodeIds) {
             // close connection to the node
@@ -485,10 +486,11 @@ public class NetworkClient implements KafkaClient {
             //修改连接的状态
             processDisconnection(responses, nodeId, now);
         }
-
         // we disconnected, so we should probably refresh our metadata
-        if (nodeIds.size() > 0)
+        if (nodeIds.size() > 0) {
+            //更新元数据
             metadataUpdater.requestUpdate();
+        }
     }
 
     /**
@@ -501,6 +503,7 @@ public class NetworkClient implements KafkaClient {
     private void handleCompletedSends(List<ClientResponse> responses, long now) {
         // if no response is expected then when the send is completed, return it
         for (Send send : this.selector.completedSends()) {
+            //获取最后一个发送的请求
             ClientRequest request = this.inFlightRequests.lastSent(send.destination());
             if (!request.expectResponse()) {
                 //todo 请求不期待响应   completeLastSent 最后一个完成发送请求 从队列中移除
@@ -747,7 +750,7 @@ public class NetworkClient implements KafkaClient {
                 //todo 创建获取主题元数据请求
                 ClientRequest clientRequest = request(now, nodeConnectionId, metadataRequest);
                 log.debug("Sending metadata request {} to node {}", metadataRequest, node.id());
-                System.out.println("发送更新元数据请求=========");
+                System.out.println("发送更新元数据请求时间：" + sdf.format(new Date()));
                 //在这个方法里面,会将请求存储起来
                 doSend(clientRequest, now);
             } else if (connectionStates.canConnect(nodeConnectionId, now)) {
