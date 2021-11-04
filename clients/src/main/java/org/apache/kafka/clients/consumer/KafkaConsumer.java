@@ -1059,6 +1059,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
             //有数据直接返回
             return records;
         }
+
         //TODO 发送拉取请求 里面有回调函数
         fetcher.sendFetches();        //todo 并行模式 1 x x
         long now = time.milliseconds();
