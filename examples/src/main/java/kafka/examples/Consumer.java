@@ -48,7 +48,6 @@ public class Consumer extends Thread{
         this.topic = topic;
     }
 
-
     public void run(){
         // 消费者再平衡监听器
         //consumer.subscribe(Pattern pattern, ConsumerRebalanceListener listener)
