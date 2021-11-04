@@ -1063,6 +1063,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
         fetcher.sendFetches();        //todo 并行模式 1 x x
         long now = time.milliseconds();
         long pollTimeout = Math.min(coordinator.timeToNextPoll(now), timeout);
+
         //todo 并行模式 2 x x
         // 进行异步和轮询
         client.poll(pollTimeout, now, new PollCondition() {
