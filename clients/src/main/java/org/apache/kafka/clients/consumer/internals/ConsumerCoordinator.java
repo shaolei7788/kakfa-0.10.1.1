@@ -87,8 +87,15 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
 
     private boolean isLeader = false;
     private Set<String> joinedSubscription;
-    //用来存储Metadata快照信息，主要用来检查topic是否发生了分区变化
+    //用来储存Metadata的快照信息，主要用来检测Topic是否发生了分区数量的变化。
+    //在ConsumerCoordinator的构造方法中，会为metadata添加一个监听器，当metadata更新时会做以下事情：
+    //1. 如果是AUTO_PARTTERN模式，则使用用户自定义的正则表达式过滤Topic，得到需要订阅的Topic集合后，设置到SubscriptionState的subscription集合和groupSubscription集合中。
+    //如果是AUTO_TOPICS AUTO_PATTERN模式，为当前metadata做一个快照，这个快照底层使用map记录每个topic中partition的个数。
+    //把新老快照做个对比，如果发生变化，就表示消费者订阅的topic发生分区数量的变化，就把subscriptionState的needsPartitionAssignment字段设置为true，需要重新进行分区分配。
+    //使用metadataSnapshot字段记录变化后的新快照
     private MetadataSnapshot metadataSnapshot;
+    //在leader消费者开始分配分区操作前，使用这个字段记录metadata快照；
+    //收到syncGroupResponse后，会比较此字段记录的快照与当前Metadata是否发生变化。如果发生变化，就要重新进行分区分配
     private MetadataSnapshot assignmentSnapshot;
     private long nextAutoCommitDeadline;
 
@@ -137,6 +144,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
             this.nextAutoCommitDeadline = time.milliseconds() + autoCommitIntervalMs;
         }
         this.metadata.requestUpdate();
+        //添加元数据监听器
         addMetadataListener();
     }
 
@@ -176,6 +184,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
         metadata.setTopics(subscriptions.groupSubscription());
     }
 
+    //添加元数据监听器
     private void addMetadataListener() {
         this.metadata.addListener(new Metadata.Listener() {
             @Override
@@ -183,11 +192,14 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
                 // if we encounter any unauthorized topics, raise an exception to the user
                 if (!cluster.unauthorizedTopics().isEmpty())
                     throw new TopicAuthorizationException(new HashSet<>(cluster.unauthorizedTopics()));
-
-                if (subscriptions.hasPatternSubscription())
+                //消费者订阅状态有正则表达式匹配模式
+                if (subscriptions.hasPatternSubscription()) {
+                    //更新正则表达式订阅的主题
                     updatePatternSubscription(cluster);
+                }
 
                 // check if there are any changes to the metadata which should trigger a rebalance
+                //消费者订阅状态是自动分配分区的
                 if (subscriptions.partitionsAutoAssigned()) {
                     MetadataSnapshot snapshot = new MetadataSnapshot(subscriptions, cluster);
                     if (!snapshot.equals(metadataSnapshot))
@@ -205,6 +217,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
         return null;
     }
 
+    //消费者成功加入组
     @Override
     protected void onJoinComplete(int generation,
                                   String memberId,
@@ -828,6 +841,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
     }
 
     private static class MetadataSnapshot {
+        //每个topic的分区数
         private final Map<String, Integer> partitionsPerTopic;
 
         public MetadataSnapshot(SubscriptionState subscription, Cluster cluster) {

@@ -590,7 +590,7 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
     info("New partition creation callback for %s".format(newPartitions.mkString(",")))
     //todo 将分区的状态从初始的 不存在状态 改为 NewPartition(新建状态)
     partitionStateMachine.handleStateChanges(newPartitions, NewPartition)
-    //todo 将副本的状态从初始的 不存在状态 改为 NewPartition(新建状态)    replicasForPartition 是获取指定分区集合的副本
+    //todo 将副本的状态从初始的 不存在状态 改为 NewReplica(新建状态)    replicasForPartition 是获取指定分区集合的副本
     replicaStateMachine.handleStateChanges(controllerContext.replicasForPartition(newPartitions), NewReplica)
     //todo offlinePartitionSelector 分区Leader选择器 分区从新建状态到上线状态并不会用到offlinePartitionSelector
     // 只有下线状态(broker挂了)，上线状态(分区有主副本且活着，但是控制器选区其它副本作为leader) 到上线状态

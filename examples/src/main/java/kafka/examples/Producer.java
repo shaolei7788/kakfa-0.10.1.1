@@ -26,8 +26,9 @@ public class Producer {
     private final String topic;
 
     public static void main(String[] args) {
-        Producer producer = new Producer("second", false);
+        Producer producer = new Producer("first", false);
         producer.dowork();
+        System.out.println("发送成功");
     }
 
     public Producer(String topic, Boolean isAsync) {
@@ -44,20 +45,31 @@ public class Producer {
 
     public void dowork() {
         long startTime = System.currentTimeMillis();
-        for (int i = 100; i < 200; i++) {
+        for (int i = 0; i < 1000; i++) {
             //同步发送
             //producer.send(new ProducerRecord<String, String>(topic,"hello" +i));
             //异步发送
-            producer.send(new ProducerRecord<>(topic, "hello" + i),
+            producer.send(new ProducerRecord<>(topic, String.valueOf(i),"hello" + i),
                     new DemoCallBack(startTime, String.valueOf(i), "hello" + i));
-            try {
-                Thread.sleep(1000);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
 
         }
         producer.close();
+//        int i =0;
+//        while(true){
+//            //同步发送
+//            //producer.send(new ProducerRecord<String, String>(topic,"hello" +i));
+//            //异步发送
+//            i++;
+//            producer.send(new ProducerRecord<>(topic, String.valueOf(i),"hello" + i),
+//                    new DemoCallBack(startTime, String.valueOf(i), "hello" + i));
+//            if (i % 1000 == 0){
+//                try {
+//                    Thread.sleep(1000);
+//                } catch (InterruptedException e) {
+//                    e.printStackTrace();
+//                }
+//            }
+//        }
     }
 }
 

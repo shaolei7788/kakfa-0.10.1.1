@@ -935,7 +935,7 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
       if (authorizedTopics.isEmpty)
         Seq.empty[MetadataResponse.TopicMetadata]
       else {
-        //获取topic元数据信息
+        //todo 获取topic元数据信息
         getTopicMetadata(authorizedTopics, request.securityProtocol, errorUnavailableEndpoints)
       }
 
@@ -1182,9 +1182,8 @@ class KafkaApis(val requestChannel: RequestChannel,//请求通道
     if (!authorize(request.session, Read, new Resource(Group, heartbeatRequest.groupId))) {
       val heartbeatResponse = new HeartbeatResponse(Errors.GROUP_AUTHORIZATION_FAILED.code)
       requestChannel.sendResponse(new Response(request, new ResponseSend(request.connectionId, respHeader, heartbeatResponse)))
-    }
-    else {
-      // let the coordinator to handle heartbeat
+    } else {
+      //todo 组协调者处理心跳
       coordinator.handleHeartbeat(
         heartbeatRequest.groupId(),
         heartbeatRequest.memberId(),

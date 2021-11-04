@@ -103,7 +103,7 @@ public abstract class AbstractCoordinator implements Closeable {
     protected final ConsumerNetworkClient client;
     protected final Time time;
     protected final long retryBackoffMs;
-
+    //心跳线程
     private HeartbeatThread heartbeatThread = null;
     //是否需要重新加入group
     private boolean rejoinNeeded = true;
@@ -111,7 +111,10 @@ public abstract class AbstractCoordinator implements Closeable {
     private boolean needsJoinPrepare = true;
     private MemberState state = MemberState.UNJOINED;
     private RequestFuture<ByteBuffer> joinFuture = null;
+    //记录服务端GroupCoordinator所在Node的节点
     private Node coordinator = null;
+    //服务端GroupCoordinator返回的年代信息，用来区分两次rebalance操作。
+    //由于网络延迟等问题，在执行Rebalance操作时可能受到上次rebalance过期的请求，避免这种干扰，每次rebalance操作都会递增generation的值
     private Generation generation = Generation.NO_GENERATION;
 
     private RequestFuture<Void> findCoordinatorFuture = null;
@@ -955,7 +958,9 @@ public abstract class AbstractCoordinator implements Closeable {
                                             // it is valid to continue heartbeating while the group is rebalancing. This
                                             // ensures that the coordinator keeps the member in the group for as long
                                             // as the duration of the rebalance timeout. If we stop sending heartbeats,
-                                            // however, then the session timeout may expire before we can rejoin.
+                                            //
+                                            System.out.println("触发再平衡");
+                                            e.printStackTrace();
                                             heartbeat.receiveHeartbeat(time.milliseconds());
                                         } else {
                                             heartbeat.failHeartbeat();
